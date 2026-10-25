@@ -47,17 +47,11 @@ class Gate:
     async def decide(
         self, messages: list[ChatMessage], pinned_route: Route | None
     ) -> tuple[GateDecision, list[ChatMessage]]:
-        """The decision for a request, and its messages with identifiers masked."""
-        started = time.perf_counter()
-        guarded_texts = [message.content for message in messages if message.role == "tool"] + [last_user_text(messages)]
-        probabilities = await asyncio.gather(*(self._guard.probability(text) for text in guarded_texts))
-        injection_probability = max(probabilities)
-        blocked = injection_probability >= self._settings.block_from_injection_probability
-        # Only an allowed request needs a route, so a blocked one never waits on the decision endpoint
-        difficulty = None
-        if pinned_route is None and not blocked:
-            difficulty = await self._decisions.difficulty(last_user_text(messages))
+        """The decision for a request, and its messages with identifiers masked.
 
+        Masking comes first, so the guard and the router (either may be a hosted API) never see an identifier.
+        """
+        started = time.perf_counter()
         masked_messages = []
         masked_count = 0
         for message in messages:  # each message is masked on its own; a conversation holds a handful
@@ -67,6 +61,16 @@ class Gate:
                 masked_count += count
             else:
                 masked_messages.append(message)
+
+        guarded_texts = [message.content for message in masked_messages if message.role == "tool"]
+        guarded_texts.append(last_user_text(masked_messages))
+        probabilities = await asyncio.gather(*(self._guard.probability(text) for text in guarded_texts))
+        injection_probability = max(probabilities)
+        blocked = injection_probability >= self._settings.block_from_injection_probability
+        # Only an allowed request needs a route, so a blocked one never waits on the decision endpoint
+        difficulty = None
+        if pinned_route is None and not blocked:
+            difficulty = await self._decisions.difficulty(last_user_text(masked_messages))
 
         needs_strong_model = difficulty is not None and difficulty >= self._settings.strong_from_difficulty
         route: Route | None = None if blocked else pinned_route or ("strong" if needs_strong_model else "small")

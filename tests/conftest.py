@@ -18,7 +18,11 @@ class FakeGuard:
 
     name = "fake-guard"
 
+    def __init__(self) -> None:
+        self.seen: list[str] = []
+
     async def probability(self, text: str) -> float:
+        self.seen.append(text)
         return 0.97 if "IGNORE" in text else 0.02
 
 
@@ -27,7 +31,11 @@ class FakeDecisions:
 
     model = "fake-decisions"
 
+    def __init__(self) -> None:
+        self.seen: list[str] = []
+
     async def difficulty(self, state: str) -> float:
+        self.seen.append(state)
         return 1.8 if "code" in state else 0.2
 
 
@@ -61,13 +69,25 @@ def upstream() -> FakeUpstream:
 
 
 @pytest.fixture
-async def client(upstream: FakeUpstream) -> AsyncIterator[httpx.AsyncClient]:
+def guard() -> FakeGuard:
+    return FakeGuard()
+
+
+@pytest.fixture
+def decisions() -> FakeDecisions:
+    return FakeDecisions()
+
+
+@pytest.fixture
+async def client(
+    upstream: FakeUpstream, guard: FakeGuard, decisions: FakeDecisions
+) -> AsyncIterator[httpx.AsyncClient]:
     settings = Settings(_env_file=None, environment="test", api_keys="test-key")  # type: ignore[call-arg]
     upstream_http = httpx.AsyncClient(base_url="http://upstream/v1", transport=httpx.MockTransport(upstream.handler))
     gate = Gate(
         settings=settings,
-        guard=FakeGuard(),
-        decisions=FakeDecisions(),  # type: ignore[arg-type]
+        guard=guard,
+        decisions=decisions,  # type: ignore[arg-type]
         upstream=UpstreamClient(upstream_http),
         cache=AnswerCache(max_entries=10, ttl_seconds=60),
         events=EventLog(size=50),

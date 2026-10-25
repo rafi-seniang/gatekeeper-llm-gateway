@@ -47,8 +47,14 @@ class Settings(BaseSettings):
     # Expected difficulty (0 to 2) from which a request goes to the strong model
     strong_from_difficulty: float = Field(default=1.0, ge=0, le=2)
 
-    # Which guard decides whether a request is a prompt injection
-    injection_guard: Literal["classifier", "decision"] = "classifier"
+    # Which guard decides whether a request is a prompt injection. cascade: the classifier first, and only a
+    # request it would block goes to Jev, which must agree before the request is blocked
+    injection_guard: Literal["classifier", "decision", "jev", "cascade"] = "classifier"
+    # TypeSafe's Jev, a hosted System One model (POST /v1/systemone). JEV_API_KEY comes from the secrets file
+    jev_base_url: str = "https://api.typesafe.ai"
+    jev_api_key: SecretStr = Field(default=SecretStr(""), validation_alias=AliasChoices("JEV_API_KEY"))
+    jev_model: str = "jev-latest"
+    jev_timeout_seconds: float = Field(default=15, gt=0)
     # A Hugging Face text classifier with an INJECTION label (Apache 2.0)
     injection_classifier_model: str = "protectai/deberta-v3-base-prompt-injection-v2"
     # Requests at or above this injection probability are blocked

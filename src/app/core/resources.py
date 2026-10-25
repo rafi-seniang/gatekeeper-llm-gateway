@@ -11,7 +11,7 @@ from app.core.config import Settings
 from app.gate.cache import AnswerCache
 from app.gate.decisions import DecisionClient
 from app.gate.events import EventLog
-from app.gate.injection import ClassifierGuard, DecisionGuard, InjectionGuard
+from app.gate.injection import CascadeGuard, ClassifierGuard, DecisionGuard, InjectionGuard, JevGuard
 from app.gate.service import Gate
 from app.gate.upstream import UpstreamClient
 
@@ -20,6 +20,18 @@ from app.gate.upstream import UpstreamClient
 class Resources:
     gate: Gate
     clients: list[httpx.AsyncClient]
+
+
+def jev_client(settings: Settings) -> httpx.AsyncClient:
+    """An HTTP client for TypeSafe's API. Refuses to start without the key rather than failing on every request."""
+    api_key = settings.jev_api_key.get_secret_value()
+    if not api_key:
+        raise RuntimeError(f"INJECTION_GUARD={settings.injection_guard} needs JEV_API_KEY in the secrets file")
+    return httpx.AsyncClient(
+        base_url=settings.jev_base_url,
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=settings.jev_timeout_seconds,
+    )
 
 
 def build_resources(settings: Settings) -> Resources:
@@ -34,11 +46,25 @@ def build_resources(settings: Settings) -> Resources:
         timeout=settings.decision_timeout_seconds,
     )
     decisions = DecisionClient(decision_http, settings.decision_model, settings.decision_protocol)
-    guard: InjectionGuard = (
-        ClassifierGuard(settings.injection_classifier_model, settings.device)
-        if settings.injection_guard == "classifier"
-        else DecisionGuard(decisions)
-    )
+    clients = [upstream_http, decision_http]
+    guard: InjectionGuard
+    if settings.injection_guard == "decision":
+        guard = DecisionGuard(decisions)
+    elif settings.injection_guard == "classifier":
+        guard = ClassifierGuard(settings.injection_classifier_model, settings.device)
+    else:
+        jev_http = jev_client(settings)
+        clients.append(jev_http)
+        jev = JevGuard(DecisionClient(jev_http, settings.jev_model, "systemone"))
+        guard = (
+            jev
+            if settings.injection_guard == "jev"
+            else CascadeGuard(
+                ClassifierGuard(settings.injection_classifier_model, settings.device),
+                jev,
+                settings.block_from_injection_probability,
+            )
+        )
     gate = Gate(
         settings=settings,
         guard=guard,
@@ -47,7 +73,7 @@ def build_resources(settings: Settings) -> Resources:
         cache=AnswerCache(settings.cache_max_entries, settings.cache_ttl_seconds),
         events=EventLog(settings.event_log_size),
     )
-    return Resources(gate=gate, clients=[upstream_http, decision_http])
+    return Resources(gate=gate, clients=clients)
 
 
 def lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:

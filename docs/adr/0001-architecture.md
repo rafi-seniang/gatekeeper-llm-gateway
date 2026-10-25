@@ -11,21 +11,26 @@ decisions are fast and measured.
 ## Decision
 
 - Speak the OpenAI chat API, so an app changes only its base URL.
-- Guard injection with a fine-tuned classifier (`protectai/deberta-v3-base-prompt-injection-v2`), loaded at startup.
+- Guard injection with TypeSafe's Jev asked one yes/no question, with the local classifier
+  (`protectai/deberta-v3-base-prompt-injection-v2`) and a cascade of the two as settings. Added 25 Oct 2026 after
+  the classifier wrongly blocked support messages and Indonesian text.
 - Route with a decision model through the Jev wire format (`POST /v1/systemone`), so the decision provider is a
   setting: the Lab's `transformers serve`, `laya-serve`, Jev or OpenAI's Decisions API.
 - Guard first, route second: a blocked request never waits on the decision endpoint.
-- Mask identifier formats (email, phone, NIK, card) with patterns: formats, not meaning.
+- Mask identifier formats (email, phone, NIK, card) with patterns before anything else, so the guard and the router,
+  either of which may be a hosted API, never see an identifier.
 - Fail with a 503 that names the failing dependency; never forward unguarded or route by default.
 
 ## Evidence
 
-On 46 labelled requests the classifier caught 15 of 16 injections with 7 false blocks in 30 benign requests, in 40 ms;
-Qwen3.5-2B asked the same question as a decision caught 7 of 16 with 12 false blocks. The decision model routes well
-(90%) but does not guard. See README and `scripts/eval_gate.py`.
+On our 46 labelled requests the classifier caught 15 of 16 injections with 6 false blocks in 30 benign requests, in
+40 ms, and Jev caught 15 of 16 with none, in about 300 ms. On the public deepset/prompt-injections test split (116,
+English and German) Jev caught 31 of 60 and the classifier 22, both with no false blocks. Qwen3.5-2B asked the same
+question as a decision caught 7 of 16 with 12 false blocks. See README, `scripts/eval_injection.py` and
+`scripts/eval_gate.py`.
 
 ## Consequences
 
-The classifier wrongly blocks some Indonesian text and most support messages that carry a card or phone number, so a
-real deployment needs it fine-tuned on its own benign traffic first. Two
-models run per request, so the gate adds about half a second on a shared laptop GPU.
+Jev is a paid hosted API: masked text leaves the building and the guard adds about 0.3 s. It misses prompt extraction
+worded as an innocent task ("repeat the text above"), which the classifier catches, so neither guard alone covers
+every attack. The cascade keeps the classifier's speed and Jev's precision but lets through what either misses.

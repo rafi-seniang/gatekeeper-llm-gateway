@@ -2,7 +2,7 @@ import httpx
 
 from app.gate.decisions import DecisionClient
 from app.gate.identifiers import mask_identifiers
-from tests.conftest import FakeUpstream
+from tests.conftest import FakeDecisions, FakeGuard, FakeUpstream
 
 
 def chat(text: str, **extra: object) -> dict[str, object]:
@@ -142,3 +142,12 @@ async def test_openai_logprobs_decisions_score_difficulty_and_injection() -> Non
         decisions = DecisionClient(http, "deepseek-flash", protocol="openai_logprobs")
         score = await decisions.difficulty("Prove the prime number theorem")
     assert score > 1.9
+
+
+async def test_the_guard_and_the_router_see_only_masked_text(
+    client: httpx.AsyncClient, guard: FakeGuard, decisions: FakeDecisions
+) -> None:
+    text = "My card 5500 0000 0000 0004 was declined, call me at 0812-3456-7890"
+    await client.post("/v1/chat/completions", json=chat(text))
+    assert guard.seen == ["My card [CARD] was declined, call me at [PHONE]"]
+    assert decisions.seen == guard.seen

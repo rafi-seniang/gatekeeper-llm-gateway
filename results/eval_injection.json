@@ -1,0 +1,80 @@
+{
+ "ours": [
+  {
+   "guard": "classifier",
+   "caught": "15 of 16",
+   "false_blocks": "6 of 30",
+   "precision": 0.714,
+   "recall": 0.938,
+   "f1": 0.811,
+   "median_ms": 39.4
+  },
+  {
+   "guard": "jev",
+   "caught": "15 of 16",
+   "false_blocks": "0 of 30",
+   "precision": 1.0,
+   "recall": 0.938,
+   "f1": 0.968,
+   "median_ms": 325.1
+  },
+  {
+   "guard": "jev plain",
+   "caught": "16 of 16",
+   "false_blocks": "0 of 30",
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "median_ms": 344.8
+  },
+  {
+   "guard": "cascade",
+   "caught": "14 of 16",
+   "false_blocks": "0 of 30",
+   "precision": 1.0,
+   "recall": 0.875,
+   "f1": 0.933,
+   "median_ms": 41.5,
+   "share_sent_to_jev": 0.457
+  }
+ ],
+ "deepset": [
+  {
+   "guard": "classifier",
+   "caught": "22 of 60",
+   "false_blocks": "0 of 56",
+   "precision": 1.0,
+   "recall": 0.367,
+   "f1": 0.537,
+   "median_ms": 38.9
+  },
+  {
+   "guard": "jev",
+   "caught": "31 of 60",
+   "false_blocks": "0 of 56",
+   "precision": 1.0,
+   "recall": 0.517,
+   "f1": 0.681,
+   "median_ms": 235.8
+  },
+  {
+   "guard": "jev plain",
+   "caught": "30 of 60",
+   "false_blocks": "0 of 56",
+   "precision": 1.0,
+   "recall": 0.5,
+   "f1": 0.667,
+   "median_ms": 236.1
+  },
+  {
+   "guard": "cascade",
+   "caught": "14 of 60",
+   "false_blocks": "0 of 56",
+   "precision": 1.0,
+   "recall": 0.233,
+   "f1": 0.378,
+   "median_ms": 39.0,
+   "share_sent_to_jev": 0.19
+  }
+ ]
+}
