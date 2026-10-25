@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.core.logging import request_id
+from config.logging import request_id
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,14 @@ class RequestBlocked(AppError):
     status, title = 403, "Request blocked"
 
 
+class RateLimited(AppError):
+    status, title = 429, "Too many requests"
+
+    def __init__(self, detail: str, retry_after_seconds: int) -> None:
+        super().__init__(detail)
+        self.retry_after_seconds = retry_after_seconds
+
+
 def problem(
     status: int, title: str, detail: str, request: Request, extra: dict[str, Any] | None = None
 ) -> JSONResponse:
@@ -54,7 +62,10 @@ def problem(
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def app_error(request: Request, exc: AppError) -> JSONResponse:
-        return problem(exc.status, exc.title, exc.detail, request, exc.extra)
+        response = problem(exc.status, exc.title, exc.detail, request, exc.extra)
+        if isinstance(exc, RateLimited):
+            response.headers["Retry-After"] = str(exc.retry_after_seconds)
+        return response
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:

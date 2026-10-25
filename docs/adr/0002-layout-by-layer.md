@@ -1,6 +1,6 @@
 # 0002. One layout for every Lab backend: routes, controllers, services, engines, repositories
 
-Date: 25 Oct 2026. Status: accepted. Extends 0001.
+Date: 25 Oct 2026. Status: replaced by 0003 on the same day.
 
 ## Context
 

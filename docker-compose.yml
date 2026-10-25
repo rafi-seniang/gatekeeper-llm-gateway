@@ -1,0 +1,12 @@
+# Local Redis for the shared rate limit and answer cache. The gate itself runs on the host (it needs the GPU for the
+# classifier guard): `docker compose up -d redis`, then `python main.py`.
+services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: gatekeeper-redis
+    ports: ["6379:6379"]
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20

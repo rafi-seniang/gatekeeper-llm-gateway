@@ -4,13 +4,15 @@ from typing import Any
 import httpx
 import pytest
 
-from app.api.deps import get_gate
-from app.core.config import Settings
+from app.bootstrap import create_app
 from app.engines.upstream import UpstreamClient
-from app.main import create_app
-from app.repositories.answer_cache import AnswerCache
-from app.repositories.events import EventLog
-from app.services.gate import Gate
+from app.features.gate.cache import InMemoryAnswerCache
+from app.features.gate.events import EventLog
+from app.features.gate.service import Gate
+from app.platform.dependencies import get_resources
+from app.platform.rate_limit import InMemoryRateLimiter
+from app.platform.resources import Resources
+from config.settings import Settings
 
 
 class FakeGuard:
@@ -64,6 +66,12 @@ class FakeUpstream:
 
 
 @pytest.fixture
+def settings() -> Settings:
+    """A test module can override this fixture to change a setting."""
+    return Settings(_env_file=None, environment="test", api_keys="test-key")  # type: ignore[call-arg]
+
+
+@pytest.fixture
 def upstream() -> FakeUpstream:
     return FakeUpstream()
 
@@ -80,20 +88,20 @@ def decisions() -> FakeDecisions:
 
 @pytest.fixture
 async def client(
-    upstream: FakeUpstream, guard: FakeGuard, decisions: FakeDecisions
+    settings: Settings, upstream: FakeUpstream, guard: FakeGuard, decisions: FakeDecisions
 ) -> AsyncIterator[httpx.AsyncClient]:
-    settings = Settings(_env_file=None, environment="test", api_keys="test-key")  # type: ignore[call-arg]
     upstream_http = httpx.AsyncClient(base_url="http://upstream/v1", transport=httpx.MockTransport(upstream.handler))
     gate = Gate(
         settings=settings,
         guard=guard,
         decisions=decisions,  # type: ignore[arg-type]
         upstream=UpstreamClient(upstream_http),
-        cache=AnswerCache(max_entries=10, ttl_seconds=60),
+        cache=InMemoryAnswerCache(max_entries=10, ttl_seconds=60),
         events=EventLog(size=50),
     )
     app = create_app(settings)
-    app.dependency_overrides[get_gate] = lambda: gate
+    resources = Resources(gate=gate, rate_limiter=InMemoryRateLimiter(), clients=[upstream_http])
+    app.dependency_overrides[get_resources] = lambda: resources
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
         transport=transport, base_url="http://test", headers={"X-API-Key": "test-key"}

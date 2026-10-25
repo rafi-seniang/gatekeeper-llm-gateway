@@ -3,7 +3,8 @@
 An OpenAI-compatible LLM gateway. An app points its OpenAI SDK at Gatekeeper instead of at a model, and every
 request passes four checks before a model sees it:
 
-1. **Cache.** An exact repeat of an earlier request is answered from memory (the request as sent, not normalised).
+1. **Cache.** An exact repeat of an earlier request is answered from the cache (the request as sent, not
+   normalised). The cache is in Redis, so every worker shares it and it survives a restart.
 2. **Identifier masking.** Email addresses, phone numbers, 16-digit NIKs and card numbers in user and tool text are
    replaced by `[EMAIL]`, `[PHONE]`, `[NIK]` and `[CARD]` first, so nothing after this step, hosted or not, sees them.
 3. **Injection guard.** The guard gives the probability that the latest user message, or any tool result in the
@@ -15,7 +16,8 @@ request passes four checks before a model sees it:
    strong model, below that to the small one. A caller can pin a route with `"model": "small"` or `"strong"`.
 
 Every answer carries a `gate` field with what was decided, and every request is logged for `/v1/gate/stats` and
-`/v1/gate/events`. When the guard, the decision endpoint or the upstream fails, the answer is a 503 that names it,
+`/v1/gate/events`. Each API key gets `RATE_LIMIT_PER_MINUTE` requests a minute on `/v1`, counted in Redis, and the
+next one is a 429 with `Retry-After`. When the guard, the decision endpoint or the upstream fails, the answer is a 503 that names it,
 never a quiet fallback.
 
 Part of the AI Lab: it keeps the Lab contract (`/health`, `/meta`, OpenAPI, CORS for the lab frontend) and has a
@@ -150,8 +152,13 @@ With `DEEPSEEK_API_KEY` set in `Lab/secrets/secrets.env` (no local LLM server ne
 ```powershell
 # from Lab/backends/gatekeeper
 copy .env.example .env
-..\..\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir src --port 8020
+docker compose up -d redis                     # the shared rate limit and answer cache
+..\..\.venv\Scripts\python.exe main.py           # or: uvicorn main:app --port 8020
 ```
+
+Without `REDIS_URL` the rate limit and the cache are kept per process, which is fine for one local process only;
+with `ENVIRONMENT=production` the gate refuses to start without Redis, and with a `REDIS_URL` it refuses to start
+when Redis does not answer.
 
 Then use it like OpenAI:
 
@@ -167,6 +174,28 @@ OpenAI `top_logprobs` (used by `.env.example` with `deepseek-flash` and `deepsee
 while `DECISION_PROTOCOL=systemone` speaks `POST /v1/systemone` (`transformers serve`, `laya-serve` or Jev). `.env.example`
 lists both setups. A guard that needs Jev refuses to start without `JEV_API_KEY`.
 
+## Layout
+
+Feature-first (`docs/adr/0003-feature-first-layout.md`): each feature is one folder, and what every feature shares is
+in `app/platform`.
+
+```
+main.py                     entry point
+config/                     settings (every environment value, with a comment) and JSON logging
+app/
+  bootstrap.py              the app factory: middleware, error handlers, /v1 behind the API key and the rate limit
+  platform/                 resources (models, clients, Redis, built once), dependencies, errors, middleware,
+                            security, rate_limit
+  engines/                  injection guards (DeBERTa, Jev, cascade), the decision client, the upstream client
+  features/
+    gate/                   router, controller, service (the four checks), identifiers (masking), cache (Redis or
+                            memory), events, schemas, dependencies
+    health/                 /health and /meta
+scripts/                    eval_injection.py, eval_gate.py (run from the repository root with PYTHONPATH=.)
+tests/                      fakes for every model and client, no network
+docs/adr/  docs/experiments/
+```
+
 ## API
 
 | Endpoint | What |
@@ -179,19 +208,20 @@ lists both setups. A guard that needs Jev refuses to start without `JEV_API_KEY`
 
 ## Checks
 
-`ruff check . && ruff format --check . && mypy && pytest -q` (20 tests, no network, fakes for the guards, the decision
-endpoint, Jev and the upstream). `python scripts/eval_injection.py [ours deepset qualifire]` needs `JEV_API_KEY` and
+`ruff check . && ruff format --check . && mypy && pytest -q` (22 tests, no network, fakes for the guards, the decision
+endpoint, Jev and the upstream). `PYTHONPATH=. python scripts/eval_injection.py [ours deepset qualifire]` needs `JEV_API_KEY` and
 the `laya` package, and downloads the deepset test split to `data/deepset_prompt_injections_test.jsonl` on its first
 run. The `qualifire` set (5,000 prompts from the gated, CC BY-NC
 [`rogue-security/prompt-injections-benchmark`](https://huggingface.co/datasets/rogue-security/prompt-injections-benchmark))
 runs only when `HF_TOKEN` belongs to an account that accepted its terms, is kept out of git, and costs about $0.11 in
-Jev calls. Each run prints the Jev input tokens it used. `python scripts/eval_gate.py` needs the
-decision endpoint.
+Jev calls. Each run prints the Jev input tokens it used. `PYTHONPATH=. python scripts/eval_gate.py` needs
+the decision endpoint.
 
 ## Known limits
 
 - Streaming is not proxied: `stream: true` is rejected with 422.
-- The cache and the event log live in memory and start again on a restart.
+- The event log lives in memory: `/v1/gate/stats` and `/v1/gate/events` describe one process and start again on a
+  restart. The cache and the rate limit are in Redis.
 - Masking covers identifier formats only. Names and addresses are meaning, not format, and are not masked.
 - No guard here catches every attack. The next step is a larger labelled set from real traffic, and either
   fine-tuning the classifier on its benign messages or running both guards and sending disagreements to review.

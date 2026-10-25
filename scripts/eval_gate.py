@@ -13,9 +13,9 @@ from pathlib import Path
 import httpx
 import pandas as pd
 
-from app.core.config import get_settings
 from app.engines.decisions import DecisionClient
 from app.engines.injection import ClassifierGuard, DecisionGuard, InjectionGuard
+from config.settings import get_settings
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "eval_requests.jsonl"
 

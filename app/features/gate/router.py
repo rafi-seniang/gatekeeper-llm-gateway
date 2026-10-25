@@ -4,10 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import get_gate_controller
-from app.controllers.gate import GateController
-from app.schemas.chat import ChatCompletion, ChatRequest, CheckRequest
-from app.schemas.gate import GateDecision, GateEvent, GateStats
+from app.features.gate.controller import GateController
+from app.features.gate.dependencies import get_gate_controller
+from app.features.gate.schemas import ChatCompletion, ChatRequest, CheckRequest, GateDecision, GateEvent, GateStats
 
 router = APIRouter(tags=["gate"])
 Controller = Annotated[GateController, Depends(get_gate_controller)]

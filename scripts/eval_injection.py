@@ -36,12 +36,12 @@ import httpx
 import pandas as pd
 from dotenv import dotenv_values
 
-from app.core.config import get_settings
-from app.core.errors import UpstreamUnavailable
-from app.core.resources import jev_client
 from app.engines.decisions import INJECTION_QUESTION, DecisionClient
 from app.engines.injection import JEV_INJECTION_QUESTION, ClassifierGuard, InjectionGuard, JevGuard
-from app.services.identifiers import mask_identifiers
+from app.features.gate.identifiers import mask_identifiers
+from app.platform.errors import UpstreamUnavailable
+from app.platform.resources import jev_client
+from config.settings import get_settings
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 SECRETS = REPOSITORY.parents[1] / "secrets" / "secrets.env"

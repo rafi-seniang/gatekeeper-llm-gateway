@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 import httpx
 
-from app.core.errors import UpstreamUnavailable
+from app.platform.errors import UpstreamUnavailable
 
 LETTERS = string.ascii_uppercase
 

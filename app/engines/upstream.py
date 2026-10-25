@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from app.core.errors import UpstreamUnavailable
+from app.platform.errors import UpstreamUnavailable
 
 
 class UpstreamClient:

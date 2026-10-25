@@ -3,7 +3,7 @@
 import statistics
 from collections import deque
 
-from app.schemas.gate import GateEvent, GateStats
+from app.features.gate.schemas import GateEvent, GateStats
 
 
 class EventLog:

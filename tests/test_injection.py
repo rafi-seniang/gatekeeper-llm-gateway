@@ -3,10 +3,10 @@ import json
 import httpx
 import pytest
 
-from app.core.config import Settings
-from app.core.resources import jev_client
 from app.engines.decisions import DecisionClient
 from app.engines.injection import JEV_INJECTION_QUESTION, CascadeGuard, JevGuard
+from app.platform.resources import jev_client
+from config.settings import Settings
 
 
 class FixedGuard:

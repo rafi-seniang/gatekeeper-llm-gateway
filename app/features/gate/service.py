@@ -5,17 +5,16 @@ import time
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from app.core.config import Settings
-from app.core.errors import AppError, RequestBlocked
-from app.core.logging import request_id
 from app.engines.decisions import DecisionClient
 from app.engines.injection import InjectionGuard
 from app.engines.upstream import UpstreamClient
-from app.repositories.answer_cache import AnswerCache, cache_key
-from app.repositories.events import EventLog
-from app.schemas.chat import ChatMessage, ChatRequest
-from app.schemas.gate import GateDecision, GateEvent, Route
-from app.services.identifiers import mask_identifiers
+from app.features.gate.cache import AnswerCache, cache_key
+from app.features.gate.events import EventLog
+from app.features.gate.identifiers import mask_identifiers
+from app.features.gate.schemas import ChatMessage, ChatRequest, GateDecision, GateEvent, Route
+from app.platform.errors import AppError, RequestBlocked
+from config.logging import request_id
+from config.settings import Settings
 
 GUARDED_ROLES = {"user", "tool"}  # text from outside the application, where injections arrive
 
@@ -117,7 +116,7 @@ class Gate:
         """An OpenAI chat completion with a `gate` field describing what the gate decided."""
         sampling = request.model_extra or {}
         key = cache_key({"model": request.model, "messages": [m.model_dump() for m in request.messages], **sampling})
-        cached = self._cache.get(key)
+        cached = await self._cache.get(key)
         if cached is not None:
             self._log(request, "cached", None, model=cached.get("model"))
             return {**cached, "gate": {**cached["gate"], "cached": True}}
@@ -158,5 +157,5 @@ class Gate:
             **completion,
             "gate": {**decision.model_dump(), "model": model, "upstream_ms": upstream_ms, "cached": False},
         }
-        self._cache.put(key, answer)
+        await self._cache.put(key, answer)
         return answer

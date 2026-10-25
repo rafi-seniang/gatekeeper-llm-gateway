@@ -1,25 +1,32 @@
 """Long-lived clients and models, built once in the lifespan and closed on shutdown. Held on app.state."""
 
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 
 import httpx
 from fastapi import FastAPI
+from redis.asyncio import Redis
 
-from app.core.config import Settings
 from app.engines.decisions import DecisionClient
 from app.engines.injection import CascadeGuard, ClassifierGuard, DecisionGuard, InjectionGuard, JevGuard
 from app.engines.upstream import UpstreamClient
-from app.repositories.answer_cache import AnswerCache
-from app.repositories.events import EventLog
-from app.services.gate import Gate
+from app.features.gate.cache import AnswerCache, InMemoryAnswerCache, RedisAnswerCache
+from app.features.gate.events import EventLog
+from app.features.gate.service import Gate
+from app.platform.rate_limit import InMemoryRateLimiter, RateLimiter, RedisRateLimiter
+from config.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class Resources:
     gate: Gate
+    rate_limiter: RateLimiter
     clients: list[httpx.AsyncClient]
+    redis: Redis | None = None
 
 
 def jev_client(settings: Settings) -> httpx.AsyncClient:
@@ -34,7 +41,27 @@ def jev_client(settings: Settings) -> httpx.AsyncClient:
     )
 
 
-def build_resources(settings: Settings) -> Resources:
+async def connect_redis(settings: Settings) -> Redis | None:
+    """Redis for the shared rate limit and answer cache. Empty REDIS_URL keeps both per process, never in production."""
+    url = settings.redis_url.get_secret_value()
+    if not url:
+        if settings.environment == "production":
+            raise RuntimeError("REDIS_URL is required in production")
+        logger.warning("REDIS_URL is empty: the rate limit and the answer cache are per process")
+        return None
+    redis = Redis.from_url(url, socket_timeout=settings.redis_timeout_seconds)
+    await redis.ping()  # refuse to start when Redis is unreachable, rather than fail on the first request
+    return redis
+
+
+async def build_resources(settings: Settings) -> Resources:
+    redis = await connect_redis(settings)
+    cache: AnswerCache = (
+        RedisAnswerCache(redis, settings.cache_ttl_seconds)
+        if redis is not None
+        else InMemoryAnswerCache(settings.cache_max_entries, settings.cache_ttl_seconds)
+    )
+    rate_limiter: RateLimiter = RedisRateLimiter(redis) if redis is not None else InMemoryRateLimiter()
     upstream_http = httpx.AsyncClient(
         base_url=settings.upstream_base_url,
         headers={"Authorization": f"Bearer {settings.upstream_api_key.get_secret_value()}"},
@@ -70,19 +97,21 @@ def build_resources(settings: Settings) -> Resources:
         guard=guard,
         decisions=decisions,
         upstream=UpstreamClient(upstream_http),
-        cache=AnswerCache(settings.cache_max_entries, settings.cache_ttl_seconds),
+        cache=cache,
         events=EventLog(settings.event_log_size),
     )
-    return Resources(gate=gate, clients=clients)
+    return Resources(gate=gate, rate_limiter=rate_limiter, clients=clients, redis=redis)
 
 
 def lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
     @asynccontextmanager
     async def run(app: FastAPI) -> AsyncIterator[None]:
-        app.state.resources = build_resources(settings)  # the classifier loads here, before the first request
+        app.state.resources = await build_resources(settings)  # models and Redis load here, before any request
         yield
         resources: Resources = app.state.resources
-        for client in resources.clients:  # two clients, closed in turn
+        for client in resources.clients:  # two or three clients, closed in turn
             await client.aclose()
+        if resources.redis is not None:
+            await resources.redis.aclose()
 
     return run
