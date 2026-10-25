@@ -1,0 +1,146 @@
+{
+ "qualifire": {
+  "scores": [
+   {
+    "guard": "classifier",
+    "caught": "1317 of 2003",
+    "false_blocks": "697 of 2997",
+    "precision": 0.654,
+    "recall": 0.658,
+    "f1": 0.656,
+    "median_ms": null
+   },
+   {
+    "guard": "jev",
+    "caught": "1329 of 2003",
+    "false_blocks": "359 of 2997",
+    "precision": 0.787,
+    "recall": 0.664,
+    "f1": 0.72,
+    "median_ms": null
+   },
+   {
+    "guard": "laya",
+    "caught": "1994 of 2003",
+    "false_blocks": "2783 of 2997",
+    "precision": 0.417,
+    "recall": 0.996,
+    "f1": 0.588,
+    "median_ms": null
+   },
+   {
+    "guard": "laya preset",
+    "caught": "1534 of 2003",
+    "false_blocks": "694 of 2997",
+    "precision": 0.689,
+    "recall": 0.766,
+    "f1": 0.725,
+    "median_ms": null
+   },
+   {
+    "guard": "cascade",
+    "caught": "1091 of 2003",
+    "false_blocks": "300 of 2997",
+    "precision": 0.784,
+    "recall": 0.545,
+    "f1": 0.643,
+    "median_ms": null,
+    "share_sent_to_jev": 0.403
+   }
+  ],
+  "thresholds": [
+   {
+    "guard": "classifier",
+    "block_from": 0.5,
+    "caught": 1317,
+    "false_blocks": 697
+   },
+   {
+    "guard": "classifier",
+    "block_from": 0.7,
+    "caught": 1301,
+    "false_blocks": 678
+   },
+   {
+    "guard": "classifier",
+    "block_from": 0.9,
+    "caught": 1261,
+    "false_blocks": 650
+   },
+   {
+    "guard": "jev",
+    "block_from": 0.5,
+    "caught": 1329,
+    "false_blocks": 359
+   },
+   {
+    "guard": "jev",
+    "block_from": 0.7,
+    "caught": 1101,
+    "false_blocks": 218
+   },
+   {
+    "guard": "jev",
+    "block_from": 0.9,
+    "caught": 785,
+    "false_blocks": 80
+   },
+   {
+    "guard": "laya",
+    "block_from": 0.5,
+    "caught": 1994,
+    "false_blocks": 2783
+   },
+   {
+    "guard": "laya",
+    "block_from": 0.7,
+    "caught": 1960,
+    "false_blocks": 2445
+   },
+   {
+    "guard": "laya",
+    "block_from": 0.9,
+    "caught": 1673,
+    "false_blocks": 1006
+   },
+   {
+    "guard": "laya preset",
+    "block_from": 0.5,
+    "caught": 1534,
+    "false_blocks": 694
+   },
+   {
+    "guard": "laya preset",
+    "block_from": 0.7,
+    "caught": 1397,
+    "false_blocks": 569
+   },
+   {
+    "guard": "laya preset",
+    "block_from": 0.9,
+    "caught": 1161,
+    "false_blocks": 376
+   },
+   {
+    "guard": "cascade",
+    "block_from": 0.5,
+    "caught": 1091,
+    "false_blocks": 300
+   },
+   {
+    "guard": "cascade",
+    "block_from": 0.7,
+    "caught": 959,
+    "false_blocks": 192
+   },
+   {
+    "guard": "cascade",
+    "block_from": 0.9,
+    "caught": 727,
+    "false_blocks": 79
+   }
+  ],
+  "jev_input_tokens": 2711208,
+  "jev_cost_usd": 0.1139
+ }
+}

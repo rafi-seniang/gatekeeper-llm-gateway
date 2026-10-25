@@ -62,6 +62,44 @@ time:
 Raising the block threshold buys no fewer false blocks for Jev on these sets (it has none at 0.5) and costs catches:
 at 0.7 Jev catches 15 of 16 and 22 of 60, at 0.9 13 of 16 and 18 of 60. The gate stays at 0.5.
 
+### The 5,000-prompt benchmark (`python scripts/eval_injection.py qualifire`, 25 Oct 2026)
+
+[`rogue-security/prompt-injections-benchmark`](https://huggingface.co/datasets/rogue-security/prompt-injections-benchmark)
+(formerly Qualifire, CC BY-NC 4.0, gated): 2,003 jailbreaks and 2,997 benign prompts. Most of both halves are long
+role-play framings ("Imagine you are a historian...", "In the magical kingdom of..."), and the label says whether the
+framing hides a harmful request. That is a harder and different task from the instruction overrides the gate is
+built for, so every guard does worse here than on the two sets above. Run at full speed (Laya in batches, 8 Jev
+requests in flight), so no latency is reported. Jev used 2.71 million input tokens, $0.11.
+
+| Guard | Caught | Benign wrongly blocked | Precision | F1 |
+|---|---|---|---|---|
+| DeBERTa classifier | 1,317 of 2,003 | 697 of 2,997 | 0.65 | 0.66 |
+| **Jev** | 1,329 of 2,003 | **359 of 2,997** | **0.79** | 0.72 |
+| Laya, the gate's question | 1,994 of 2,003 | 2,783 of 2,997 | 0.42 | 0.59 |
+| Laya, its own question | 1,534 of 2,003 | 694 of 2,997 | 0.69 | 0.73 |
+| cascade (40% go on to Jev) | 1,091 of 2,003 | 300 of 2,997 | 0.78 | 0.64 |
+
+Raising the block threshold trades catches for false blocks:
+
+| Guard | Caught at 0.5 / 0.7 / 0.9 | Wrongly blocked at 0.5 / 0.7 / 0.9 |
+|---|---|---|
+| DeBERTa classifier | 1,317 / 1,301 / 1,261 | 697 / 678 / 650 |
+| Jev | 1,329 / 1,101 / 785 | 359 / 218 / 80 |
+| Laya, its own question | 1,534 / 1,397 / 1,161 | 694 / 569 / 376 |
+| cascade | 1,091 / 959 / 727 | 300 / 192 / 79 |
+
+- **Jev halves the classifier's false blocks at the same recall** (359 against 697, with 1,329 against 1,317 caught).
+  The classifier's scores sit near 0 or 1, so its threshold changes almost nothing, while Jev's threshold is a real
+  dial: at 0.9 it wrongly blocks 80 of 2,997 (2.7%) and still catches 785.
+- **Laya with its own question catches the most (1,534) but blocks as many benign prompts as the classifier.** With the
+  gate's question it blocks nearly everything, as on the small sets.
+- **Jev's false blocks are benign prompts wrapped in a role** ("As a historian specializing in military conflicts...",
+  0.97), and its misses are harmful requests wrapped in fiction or a debate (0.17 to 0.41). The question asks about
+  attempts to change the assistant's role, so a role-play framing reads as one either way. A guard for this kind of
+  traffic needs a question about harm, not about instructions, and that question was not tuned here.
+- The results are in `results/eval_injection_qualifire.json` and `results/eval_injection_requests_qualifire.csv` (the
+  first 90 characters of each prompt).
+
 What this shows:
 
 - **Jev removes the classifier's false blocks without losing catches.** Every benign request the classifier blocked

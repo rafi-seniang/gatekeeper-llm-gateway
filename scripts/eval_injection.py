@@ -51,6 +51,7 @@ SETS = {
     "qualifire": REPOSITORY / "data" / "qualifire_prompt_injections_benchmark.jsonl",
 }
 DATASET_ROWS = "https://datasets-server.huggingface.co/rows"
+RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
 SKIPPED_GUARDS = {"qualifire": {"jev plain"}}
 BULK_SETS = {"qualifire"}  # run for throughput, not latency
 JEV_REQUESTS_IN_FLIGHT = 8
@@ -63,13 +64,15 @@ def download_rows(dataset: str, total: int, token: str | None = None) -> list[di
     """Every row of a dataset's test split through the Hugging Face dataset viewer, 100 at a time."""
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     rows = []
-    for offset in range(0, total, 100):
-        response = httpx.get(
-            DATASET_ROWS,
-            params={"dataset": dataset, "config": "default", "split": "test", "offset": offset, "length": 100},
-            headers=headers,
-            timeout=60,
-        )
+    for offset in range(0, total, 100):  # pages in order, one script run
+        params = {"dataset": dataset, "config": "default", "split": "test", "offset": offset, "length": 100}
+        time.sleep(1)  # the viewer rate-limits bursts of pages
+        response = httpx.get(DATASET_ROWS, params=params, headers=headers, timeout=60)
+        for attempt in range(5):  # 429 and 5xx come and go: wait as told, or 2, 4, 8, 16, 32 seconds, and ask again
+            if response.status_code not in RETRYABLE_STATUSES:
+                break
+            time.sleep(float(response.headers.get("Retry-After", 2 ** (attempt + 1))))
+            response = httpx.get(DATASET_ROWS, params=params, headers=headers, timeout=60)
         response.raise_for_status()
         rows += [item["row"] for item in response.json()["rows"]]
     return rows
@@ -91,9 +94,14 @@ def download_set(name: str, path: Path) -> bool:
         try:
             rows = download_rows("rogue-security/prompt-injections-benchmark", 5000, token)
         except httpx.HTTPStatusError as exc:
-            print(f"qualifire skipped: the dataset viewer answered {exc.response.status_code}. Accept the terms at "
-                  "https://huggingface.co/datasets/rogue-security/prompt-injections-benchmark with the account "
-                  "whose HF_TOKEN is in the secrets file.")  # fmt: skip
+            status = exc.response.status_code
+            reason = (
+                "the dataset viewer is busy or failing, try again later"
+                if status in RETRYABLE_STATUSES
+                else "accept the terms at https://huggingface.co/datasets/rogue-security/prompt-injections-benchmark "
+                "and let HF_TOKEN read public gated repositories"
+            )
+            print(f"qualifire skipped: the dataset viewer answered {status}, {reason}.")
             return False
         write_jsonl(path, [{"text": row["text"], "injection": row["label"] == "jailbreak"} for row in rows])
         return True
@@ -207,6 +215,8 @@ async def main(set_names: list[str]) -> None:
     for name in set_names:
         if SETS[name].is_file() or download_set(name, SETS[name]):
             sets[name] = SETS[name]
+    if not sets:
+        raise SystemExit("No set to evaluate.")
 
     from laya import Router, guard_questions  # heavy import, after the sets are known
 
