@@ -85,6 +85,10 @@ is lower than the table says.
 
 ## Cost and files
 
+Every number above, with the exact questions, the split, the model versions and the full threshold curves of every
+guard on every set, is in `injection-guard-thresholds.json` next to this file.
+
+
 Jev calls: $0.11 for the 5,000 run with the gate's question and about $0.03 for the stricter question on the tuning
 prompts and the small sets. The per-prompt scores are in `results/eval_injection_requests_qualifire.csv`, and the
 tuning run's scores in `results/local/` (kept out of git).
