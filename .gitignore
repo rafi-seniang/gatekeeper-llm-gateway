@@ -24,3 +24,6 @@ AGENTS.md
 
 # rogue-security/prompt-injections-benchmark is gated (CC BY-NC 4.0): fetched by scripts/eval_injection.py, not shared
 data/qualifire_prompt_injections_benchmark.jsonl
+
+# Local experiment scores (docs/experiments/)
+results/local/

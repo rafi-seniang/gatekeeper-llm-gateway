@@ -23,7 +23,7 @@ class FakeGuard:
 
     async def probability(self, text: str) -> float:
         self.seen.append(text)
-        return 0.97 if "IGNORE" in text else 0.02
+        return 0.99 if "IGNORE" in text else 0.02
 
 
 class FakeDecisions:

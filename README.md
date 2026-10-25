@@ -7,8 +7,10 @@ request passes four checks before a model sees it:
 2. **Identifier masking.** Email addresses, phone numbers, 16-digit NIKs and card numbers in user and tool text are
    replaced by `[EMAIL]`, `[PHONE]`, `[NIK]` and `[CARD]` first, so nothing after this step, hosted or not, sees them.
 3. **Injection guard.** The guard gives the probability that the latest user message, or any tool result in the
-   conversation, is a prompt injection. At 0.5 or more the request is refused with 403 and never sent. The guard is a
-   setting: a local DeBERTa classifier, TypeSafe's Jev, or a cascade of the two.
+   conversation, is a prompt injection. At 0.98 or more (`BLOCK_FROM_INJECTION_PROBABILITY`) the request is refused
+   with 403 and never sent. The threshold favours letting an attack through over blocking a real user (see
+   `docs/experiments/injection-guard-thresholds.md`). The guard is a setting: a local DeBERTa classifier, TypeSafe's
+   Jev, or a cascade of the two.
 4. **Routing.** A decision model scores how much reasoning the request needs (0 to 2). From 1.0 it goes to the
    strong model, below that to the small one. A caller can pin a route with `"model": "small"` or `"strong"`.
 
@@ -60,7 +62,8 @@ time:
 | deepset | cascade | 14 of 60 | 0 of 56 | 1.00 | 0.38 | 25 ms (19% go on to Jev) |
 
 Raising the block threshold buys no fewer false blocks for Jev on these sets (it has none at 0.5) and costs catches:
-at 0.7 Jev catches 15 of 16 and 22 of 60, at 0.9 13 of 16 and 18 of 60. The gate stays at 0.5.
+at 0.7 Jev catches 15 of 16 and 22 of 60, at 0.9 13 of 16 and 18 of 60. The tables in this section block at 0.5.
+The gate now blocks at 0.98, chosen on the 5,000-prompt benchmark below.
 
 ### The 5,000-prompt benchmark (`python scripts/eval_injection.py qualifire`, 25 Oct 2026)
 

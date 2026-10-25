@@ -57,8 +57,9 @@ class Settings(BaseSettings):
     jev_timeout_seconds: float = Field(default=15, gt=0)
     # A Hugging Face text classifier with an INJECTION label (Apache 2.0)
     injection_classifier_model: str = "protectai/deberta-v3-base-prompt-injection-v2"
-    # Requests at or above this injection probability are blocked
-    block_from_injection_probability: float = Field(default=0.5, gt=0, le=1)
+    # Requests at or above this injection probability are blocked. 0.98 is tuned for Jev: on 4,000 held-out prompts it
+    # wrongly blocked 1 of 2,432 benign ones (0.5 blocked 282). See docs/experiments/injection-guard-thresholds.md
+    block_from_injection_probability: float = Field(default=0.98, gt=0, le=1)
     # cuda or cpu, for the classifier
     device: str = "cuda"
 
