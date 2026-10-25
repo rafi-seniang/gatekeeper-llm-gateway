@@ -1,34 +1,33 @@
 """The OpenAI-compatible entry point and the gate's own views: check without sending, stats, recent events."""
 
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import get_gate
-from app.gate.service import Gate
-from app.schemas import ChatRequest, CheckRequest, GateDecision, GateEvent, GateStats
+from app.api.deps import get_gate_controller
+from app.controllers.gate import GateController
+from app.schemas.chat import ChatCompletion, ChatRequest, CheckRequest
+from app.schemas.gate import GateDecision, GateEvent, GateStats
 
 router = APIRouter(tags=["gate"])
+Controller = Annotated[GateController, Depends(get_gate_controller)]
 
 
 @router.post("/chat/completions")
-async def chat_completions(body: ChatRequest, gate: Annotated[Gate, Depends(get_gate)]) -> dict[str, Any]:
-    return await gate.complete(body)
+async def chat_completions(body: ChatRequest, controller: Controller) -> ChatCompletion:
+    return await controller.complete(body)
 
 
 @router.post("/gate/check")
-async def check(body: CheckRequest, gate: Annotated[Gate, Depends(get_gate)]) -> GateDecision:
-    decision, _ = await gate.decide(body.messages, pinned_route=None)
-    return decision
+async def check(body: CheckRequest, controller: Controller) -> GateDecision:
+    return await controller.check(body)
 
 
 @router.get("/gate/stats")
-async def stats(gate: Annotated[Gate, Depends(get_gate)]) -> GateStats:
-    return gate.events.stats()
+async def stats(controller: Controller) -> GateStats:
+    return controller.stats()
 
 
 @router.get("/gate/events")
-async def events(
-    gate: Annotated[Gate, Depends(get_gate)], limit: Annotated[int, Query(ge=1, le=500)] = 50
-) -> list[GateEvent]:
-    return gate.events.recent(limit)
+async def events(controller: Controller, limit: Annotated[int, Query(ge=1, le=500)] = 50) -> list[GateEvent]:
+    return controller.recent_events(limit)

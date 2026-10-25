@@ -6,11 +6,11 @@ import pytest
 
 from app.api.deps import get_gate
 from app.core.config import Settings
-from app.gate.cache import AnswerCache
-from app.gate.events import EventLog
-from app.gate.service import Gate
-from app.gate.upstream import UpstreamClient
+from app.engines.upstream import UpstreamClient
 from app.main import create_app
+from app.repositories.answer_cache import AnswerCache
+from app.repositories.events import EventLog
+from app.services.gate import Gate
 
 
 class FakeGuard:

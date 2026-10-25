@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any, Protocol
 
-from app.gate.decisions import DecisionClient
+from app.engines.decisions import DecisionClient
 
 # Jev's wording: a yes/no question with what counts as yes and as no. Written once, before any evaluation
 JEV_INJECTION_QUESTION: dict[str, Any] = {

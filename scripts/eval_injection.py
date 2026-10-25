@@ -10,7 +10,7 @@ Sets:
   its terms, and it is kept out of git.
 Guards:
 - classifier: protectai/deberta-v3-base-prompt-injection-v2, local
-- jev: TypeSafe's Jev with the gate's question and its true/false criteria (app.gate.injection.JEV_INJECTION_QUESTION)
+- jev: TypeSafe's Jev with the gate's question and its criteria (app.engines.injection.JEV_INJECTION_QUESTION)
 - jev plain: the same model with a one-line question and no criteria, to show how much the wording matters
   (not run on qualifire, to keep its cost to one Jev call per prompt)
 - laya: Convai Innovations' open Laya (laya.Router, local), asked the same question as jev
@@ -18,13 +18,15 @@ Guards:
 - cascade: the classifier, and Jev only for the requests the classifier would block; Jev must agree to block.
   Worked out from the two guards' answers on each request, so it costs no extra calls.
 Every guard sees the text as the gate passes it on: identifiers masked first ([CARD], [PHONE], [EMAIL], [NIK]).
-Each request is sent on its own, so every latency is a single request's. The question wording is the one fixed before
+In the small sets each request is sent on its own, so every latency is a single request's. The large set runs at full
+speed (Laya in batches, 8 Jev requests in flight) and reports no latency. The question wording is the one fixed before
 the first run, and the threshold table shows what a stricter block threshold trades. Needs JEV_API_KEY.
 Run from the repository root: python scripts/eval_injection.py [set ...]   (default: every set available)
 """
 
 import asyncio
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -35,10 +37,11 @@ import pandas as pd
 from dotenv import dotenv_values
 
 from app.core.config import get_settings
+from app.core.errors import UpstreamUnavailable
 from app.core.resources import jev_client
-from app.gate.decisions import INJECTION_QUESTION, DecisionClient
-from app.gate.identifiers import mask_identifiers
-from app.gate.injection import JEV_INJECTION_QUESTION, ClassifierGuard, InjectionGuard, JevGuard
+from app.engines.decisions import INJECTION_QUESTION, DecisionClient
+from app.engines.injection import JEV_INJECTION_QUESTION, ClassifierGuard, InjectionGuard, JevGuard
+from app.services.identifiers import mask_identifiers
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 SECRETS = REPOSITORY.parents[1] / "secrets" / "secrets.env"
@@ -49,6 +52,9 @@ SETS = {
 }
 DATASET_ROWS = "https://datasets-server.huggingface.co/rows"
 SKIPPED_GUARDS = {"qualifire": {"jev plain"}}
+BULK_SETS = {"qualifire"}  # run for throughput, not latency
+JEV_REQUESTS_IN_FLIGHT = 8
+LAYA_BATCH_SIZE = 32
 THRESHOLDS = [0.5, 0.7, 0.9]
 JEV_PRICE_PER_MILLION_INPUT_TOKENS = 0.042
 
@@ -106,6 +112,11 @@ class LayaGuard:
         result = await asyncio.to_thread(self._router.predict, text, {"injection": self._question})
         return float(result["answers"]["injection"]["noul"])
 
+    async def probabilities(self, texts: list[str]) -> list[float]:
+        requests = [{"state": text, "questions": {"injection": self._question}} for text in texts]
+        results = await asyncio.to_thread(self._router.predict_batch, requests, LAYA_BATCH_SIZE)
+        return [float(result["answers"]["injection"]["noul"]) for result in results]
+
 
 class TokenCount:
     """Adds up the input tokens Jev reports, so the run states what it cost."""
@@ -130,6 +141,36 @@ async def timed_probabilities(guard: InjectionGuard, texts: list[str]) -> tuple[
     return probabilities, milliseconds
 
 
+async def jev_probability_with_retries(guard: InjectionGuard, text: str) -> float:
+    """Jev answers 429 or 529 when busy. Waits 1, 2, 4 and 8 seconds before giving up."""
+    for attempt in range(4):  # each retry waits on the one before it
+        try:
+            return await guard.probability(text)
+        except UpstreamUnavailable:
+            await asyncio.sleep(2**attempt)
+    return await guard.probability(text)
+
+
+async def bulk_probabilities(guard: InjectionGuard, texts: list[str]) -> tuple[list[float], list[float]]:
+    """The large set at full speed: Laya in batches, Jev with requests in flight, the classifier in turn.
+
+    Latency is measured on the small sets, so here every latency is NaN.
+    """
+    if isinstance(guard, LayaGuard):
+        probabilities = await guard.probabilities(texts)
+    elif isinstance(guard, JevGuard):
+        request_slots = asyncio.Semaphore(JEV_REQUESTS_IN_FLIGHT)
+
+        async def ask(text: str) -> float:
+            async with request_slots:
+                return await jev_probability_with_retries(guard, text)
+
+        probabilities = list(await asyncio.gather(*(ask(text) for text in texts)))
+    else:
+        probabilities, _ = await timed_probabilities(guard, texts)
+    return probabilities, [math.nan] * len(texts)
+
+
 def scores(name: str, labels: pd.Series, blocked: pd.Series, milliseconds: pd.Series) -> dict[str, object]:
     caught = int((blocked & labels).sum())
     false_blocks = int((blocked & ~labels).sum())
@@ -142,7 +183,7 @@ def scores(name: str, labels: pd.Series, blocked: pd.Series, milliseconds: pd.Se
         "precision": round(precision, 3),
         "recall": round(recall, 3),
         "f1": round(2 * precision * recall / max(precision + recall, 1e-9), 3),
-        "median_ms": round(float(milliseconds.median()), 1),
+        "median_ms": None if milliseconds.isna().all() else round(float(milliseconds.median()), 1),
     }
 
 
@@ -196,7 +237,8 @@ async def main(set_names: list[str]) -> None:
             tokens_before = tokens.input_tokens
             for guard_name in names:
                 started = time.perf_counter()
-                probabilities, milliseconds = await timed_probabilities(guards[guard_name], masked)
+                measure = bulk_probabilities if set_name in BULK_SETS else timed_probabilities
+                probabilities, milliseconds = await measure(guards[guard_name], masked)
                 frame[f"{guard_name} p"] = probabilities
                 frame[f"{guard_name} ms"] = milliseconds
                 print(f"{set_name}: {guard_name} done in {time.perf_counter() - started:.0f} s", flush=True)

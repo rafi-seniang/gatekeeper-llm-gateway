@@ -3,9 +3,9 @@
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app import VERSION
 from app.api.middleware import register_middleware
 from app.api.routes import chat, health
-from app.api.routes.health import VERSION
 from app.core.config import Settings, get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging

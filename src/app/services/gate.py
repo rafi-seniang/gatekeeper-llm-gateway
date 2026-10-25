@@ -8,13 +8,14 @@ from typing import Any, Literal
 from app.core.config import Settings
 from app.core.errors import AppError, RequestBlocked
 from app.core.logging import request_id
-from app.gate.cache import AnswerCache, cache_key
-from app.gate.decisions import DecisionClient
-from app.gate.events import EventLog
-from app.gate.identifiers import mask_identifiers
-from app.gate.injection import InjectionGuard
-from app.gate.upstream import UpstreamClient
-from app.schemas import ChatMessage, ChatRequest, GateDecision, GateEvent, Route
+from app.engines.decisions import DecisionClient
+from app.engines.injection import InjectionGuard
+from app.engines.upstream import UpstreamClient
+from app.repositories.answer_cache import AnswerCache, cache_key
+from app.repositories.events import EventLog
+from app.schemas.chat import ChatMessage, ChatRequest
+from app.schemas.gate import GateDecision, GateEvent, Route
+from app.services.identifiers import mask_identifiers
 
 GUARDED_ROLES = {"user", "tool"}  # text from outside the application, where injections arrive
 

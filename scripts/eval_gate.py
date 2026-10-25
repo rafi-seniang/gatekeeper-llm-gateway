@@ -14,8 +14,8 @@ import httpx
 import pandas as pd
 
 from app.core.config import get_settings
-from app.gate.decisions import DecisionClient
-from app.gate.injection import ClassifierGuard, DecisionGuard, InjectionGuard
+from app.engines.decisions import DecisionClient
+from app.engines.injection import ClassifierGuard, DecisionGuard, InjectionGuard
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "eval_requests.jsonl"
 

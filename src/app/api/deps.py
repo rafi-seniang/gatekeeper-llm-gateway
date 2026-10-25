@@ -1,9 +1,12 @@
 """Dependency providers. Tests swap any of them with app.dependency_overrides."""
 
-from fastapi import Request
+from typing import Annotated
 
+from fastapi import Depends, Request
+
+from app.controllers.gate import GateController
 from app.core.resources import Resources
-from app.gate.service import Gate
+from app.services.gate import Gate
 
 
 def get_resources(request: Request) -> Resources:
@@ -11,5 +14,9 @@ def get_resources(request: Request) -> Resources:
     return resources
 
 
-def get_gate(request: Request) -> Gate:
-    return get_resources(request).gate
+def get_gate(resources: Annotated[Resources, Depends(get_resources)]) -> Gate:
+    return resources.gate
+
+
+def get_gate_controller(gate: Annotated[Gate, Depends(get_gate)]) -> GateController:
+    return GateController(gate)

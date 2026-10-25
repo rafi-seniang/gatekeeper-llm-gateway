@@ -24,7 +24,7 @@ screen in the lab frontend.
 | `INJECTION_GUARD` | What |
 |---|---|
 | `classifier` | `protectai/deberta-v3-base-prompt-injection-v2`, local, about 40 ms |
-| `jev` | TypeSafe's Jev (`jev-latest`, answered as `jev-1.14.0`), a hosted System One model asked one yes/no question with what counts as yes and no (`JEV_INJECTION_QUESTION` in `app/gate/injection.py`), about 240 ms |
+| `jev` | TypeSafe's Jev (`jev-latest`, answered as `jev-1.14.0`), a hosted System One model asked one yes/no question with what counts as yes and no (`JEV_INJECTION_QUESTION` in `app/engines/injection.py`), about 240 ms |
 | `cascade` | the classifier, and Jev only for the requests the classifier would block; Jev must agree before a block |
 | `decision` | the yes/no question asked through the decision endpoint (`DECISION_*` settings) |
 

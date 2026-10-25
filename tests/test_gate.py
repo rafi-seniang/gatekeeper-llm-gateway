@@ -1,7 +1,7 @@
 import httpx
 
-from app.gate.decisions import DecisionClient
-from app.gate.identifiers import mask_identifiers
+from app.engines.decisions import DecisionClient
+from app.services.identifiers import mask_identifiers
 from tests.conftest import FakeDecisions, FakeGuard, FakeUpstream
 
 

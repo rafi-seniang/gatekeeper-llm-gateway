@@ -8,12 +8,12 @@ import httpx
 from fastapi import FastAPI
 
 from app.core.config import Settings
-from app.gate.cache import AnswerCache
-from app.gate.decisions import DecisionClient
-from app.gate.events import EventLog
-from app.gate.injection import CascadeGuard, ClassifierGuard, DecisionGuard, InjectionGuard, JevGuard
-from app.gate.service import Gate
-from app.gate.upstream import UpstreamClient
+from app.engines.decisions import DecisionClient
+from app.engines.injection import CascadeGuard, ClassifierGuard, DecisionGuard, InjectionGuard, JevGuard
+from app.engines.upstream import UpstreamClient
+from app.repositories.answer_cache import AnswerCache
+from app.repositories.events import EventLog
+from app.services.gate import Gate
 
 
 @dataclass

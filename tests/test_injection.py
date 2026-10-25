@@ -5,8 +5,8 @@ import pytest
 
 from app.core.config import Settings
 from app.core.resources import jev_client
-from app.gate.decisions import DecisionClient
-from app.gate.injection import JEV_INJECTION_QUESTION, CascadeGuard, JevGuard
+from app.engines.decisions import DecisionClient
+from app.engines.injection import JEV_INJECTION_QUESTION, CascadeGuard, JevGuard
 
 
 class FixedGuard:
