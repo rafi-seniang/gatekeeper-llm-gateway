@@ -1,80 +1,344 @@
 {
- "ours": [
-  {
-   "guard": "classifier",
-   "caught": "15 of 16",
-   "false_blocks": "6 of 30",
-   "precision": 0.714,
-   "recall": 0.938,
-   "f1": 0.811,
-   "median_ms": 39.4
-  },
-  {
-   "guard": "jev",
-   "caught": "15 of 16",
-   "false_blocks": "0 of 30",
-   "precision": 1.0,
-   "recall": 0.938,
-   "f1": 0.968,
-   "median_ms": 325.1
-  },
-  {
-   "guard": "jev plain",
-   "caught": "16 of 16",
-   "false_blocks": "0 of 30",
-   "precision": 1.0,
-   "recall": 1.0,
-   "f1": 1.0,
-   "median_ms": 344.8
-  },
-  {
-   "guard": "cascade",
-   "caught": "14 of 16",
-   "false_blocks": "0 of 30",
-   "precision": 1.0,
-   "recall": 0.875,
-   "f1": 0.933,
-   "median_ms": 41.5,
-   "share_sent_to_jev": 0.457
-  }
- ],
- "deepset": [
-  {
-   "guard": "classifier",
-   "caught": "22 of 60",
-   "false_blocks": "0 of 56",
-   "precision": 1.0,
-   "recall": 0.367,
-   "f1": 0.537,
-   "median_ms": 38.9
-  },
-  {
-   "guard": "jev",
-   "caught": "31 of 60",
-   "false_blocks": "0 of 56",
-   "precision": 1.0,
-   "recall": 0.517,
-   "f1": 0.681,
-   "median_ms": 235.8
-  },
-  {
-   "guard": "jev plain",
-   "caught": "30 of 60",
-   "false_blocks": "0 of 56",
-   "precision": 1.0,
-   "recall": 0.5,
-   "f1": 0.667,
-   "median_ms": 236.1
-  },
-  {
-   "guard": "cascade",
-   "caught": "14 of 60",
-   "false_blocks": "0 of 56",
-   "precision": 1.0,
-   "recall": 0.233,
-   "f1": 0.378,
-   "median_ms": 39.0,
-   "share_sent_to_jev": 0.19
-  }
- ]
+ "ours": {
+  "scores": [
+   {
+    "guard": "classifier",
+    "caught": "15 of 16",
+    "false_blocks": "6 of 30",
+    "precision": 0.714,
+    "recall": 0.938,
+    "f1": 0.811,
+    "median_ms": 23.8
+   },
+   {
+    "guard": "jev",
+    "caught": "15 of 16",
+    "false_blocks": "0 of 30",
+    "precision": 1.0,
+    "recall": 0.938,
+    "f1": 0.968,
+    "median_ms": 232.5
+   },
+   {
+    "guard": "jev plain",
+    "caught": "16 of 16",
+    "false_blocks": "0 of 30",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "median_ms": 232.6
+   },
+   {
+    "guard": "laya",
+    "caught": "16 of 16",
+    "false_blocks": "28 of 30",
+    "precision": 0.364,
+    "recall": 1.0,
+    "f1": 0.533,
+    "median_ms": 444.1
+   },
+   {
+    "guard": "laya preset",
+    "caught": "12 of 16",
+    "false_blocks": "1 of 30",
+    "precision": 0.923,
+    "recall": 0.75,
+    "f1": 0.828,
+    "median_ms": 339.3
+   },
+   {
+    "guard": "cascade",
+    "caught": "14 of 16",
+    "false_blocks": "0 of 30",
+    "precision": 1.0,
+    "recall": 0.875,
+    "f1": 0.933,
+    "median_ms": 30.6,
+    "share_sent_to_jev": 0.457
+   }
+  ],
+  "thresholds": [
+   {
+    "guard": "classifier",
+    "block_from": 0.5,
+    "caught": 15,
+    "false_blocks": 6
+   },
+   {
+    "guard": "classifier",
+    "block_from": 0.7,
+    "caught": 15,
+    "false_blocks": 6
+   },
+   {
+    "guard": "classifier",
+    "block_from": 0.9,
+    "caught": 15,
+    "false_blocks": 6
+   },
+   {
+    "guard": "jev",
+    "block_from": 0.5,
+    "caught": 15,
+    "false_blocks": 0
+   },
+   {
+    "guard": "jev",
+    "block_from": 0.7,
+    "caught": 15,
+    "false_blocks": 0
+   },
+   {
+    "guard": "jev",
+    "block_from": 0.9,
+    "caught": 13,
+    "false_blocks": 0
+   },
+   {
+    "guard": "jev plain",
+    "block_from": 0.5,
+    "caught": 16,
+    "false_blocks": 0
+   },
+   {
+    "guard": "jev plain",
+    "block_from": 0.7,
+    "caught": 16,
+    "false_blocks": 0
+   },
+   {
+    "guard": "jev plain",
+    "block_from": 0.9,
+    "caught": 13,
+    "false_blocks": 0
+   },
+   {
+    "guard": "laya",
+    "block_from": 0.5,
+    "caught": 16,
+    "false_blocks": 28
+   },
+   {
+    "guard": "laya",
+    "block_from": 0.7,
+    "caught": 15,
+    "false_blocks": 27
+   },
+   {
+    "guard": "laya",
+    "block_from": 0.9,
+    "caught": 14,
+    "false_blocks": 12
+   },
+   {
+    "guard": "laya preset",
+    "block_from": 0.5,
+    "caught": 12,
+    "false_blocks": 1
+   },
+   {
+    "guard": "laya preset",
+    "block_from": 0.7,
+    "caught": 12,
+    "false_blocks": 1
+   },
+   {
+    "guard": "laya preset",
+    "block_from": 0.9,
+    "caught": 12,
+    "false_blocks": 0
+   },
+   {
+    "guard": "cascade",
+    "block_from": 0.5,
+    "caught": 14,
+    "false_blocks": 0
+   },
+   {
+    "guard": "cascade",
+    "block_from": 0.7,
+    "caught": 14,
+    "false_blocks": 0
+   },
+   {
+    "guard": "cascade",
+    "block_from": 0.9,
+    "caught": 13,
+    "false_blocks": 0
+   }
+  ],
+  "jev_input_tokens": 33138,
+  "jev_cost_usd": 0.0014
+ },
+ "deepset": {
+  "scores": [
+   {
+    "guard": "classifier",
+    "caught": "22 of 60",
+    "false_blocks": "0 of 56",
+    "precision": 1.0,
+    "recall": 0.367,
+    "f1": 0.537,
+    "median_ms": 24.0
+   },
+   {
+    "guard": "jev",
+    "caught": "30 of 60",
+    "false_blocks": "0 of 56",
+    "precision": 1.0,
+    "recall": 0.5,
+    "f1": 0.667,
+    "median_ms": 236.9
+   },
+   {
+    "guard": "jev plain",
+    "caught": "31 of 60",
+    "false_blocks": "0 of 56",
+    "precision": 1.0,
+    "recall": 0.517,
+    "f1": 0.681,
+    "median_ms": 242.7
+   },
+   {
+    "guard": "laya",
+    "caught": "57 of 60",
+    "false_blocks": "54 of 56",
+    "precision": 0.514,
+    "recall": 0.95,
+    "f1": 0.667,
+    "median_ms": 218.6
+   },
+   {
+    "guard": "laya preset",
+    "caught": "23 of 60",
+    "false_blocks": "0 of 56",
+    "precision": 1.0,
+    "recall": 0.383,
+    "f1": 0.554,
+    "median_ms": 260.8
+   },
+   {
+    "guard": "cascade",
+    "caught": "14 of 60",
+    "false_blocks": "0 of 56",
+    "precision": 1.0,
+    "recall": 0.233,
+    "f1": 0.378,
+    "median_ms": 25.2,
+    "share_sent_to_jev": 0.19
+   }
+  ],
+  "thresholds": [
+   {
+    "guard": "classifier",
+    "block_from": 0.5,
+    "caught": 22,
+    "false_blocks": 0
+   },
+   {
+    "guard": "classifier",
+    "block_from": 0.7,
+    "caught": 22,
+    "false_blocks": 0
+   },
+   {
+    "guard": "classifier",
+    "block_from": 0.9,
+    "caught": 20,
+    "false_blocks": 0
+   },
+   {
+    "guard": "jev",
+    "block_from": 0.5,
+    "caught": 30,
+    "false_blocks": 0
+   },
+   {
+    "guard": "jev",
+    "block_from": 0.7,
+    "caught": 22,
+    "false_blocks": 0
+   },
+   {
+    "guard": "jev",
+    "block_from": 0.9,
+    "caught": 18,
+    "false_blocks": 0
+   },
+   {
+    "guard": "jev plain",
+    "block_from": 0.5,
+    "caught": 31,
+    "false_blocks": 0
+   },
+   {
+    "guard": "jev plain",
+    "block_from": 0.7,
+    "caught": 17,
+    "false_blocks": 0
+   },
+   {
+    "guard": "jev plain",
+    "block_from": 0.9,
+    "caught": 8,
+    "false_blocks": 0
+   },
+   {
+    "guard": "laya",
+    "block_from": 0.5,
+    "caught": 57,
+    "false_blocks": 54
+   },
+   {
+    "guard": "laya",
+    "block_from": 0.7,
+    "caught": 54,
+    "false_blocks": 47
+   },
+   {
+    "guard": "laya",
+    "block_from": 0.9,
+    "caught": 44,
+    "false_blocks": 29
+   },
+   {
+    "guard": "laya preset",
+    "block_from": 0.5,
+    "caught": 23,
+    "false_blocks": 0
+   },
+   {
+    "guard": "laya preset",
+    "block_from": 0.7,
+    "caught": 19,
+    "false_blocks": 0
+   },
+   {
+    "guard": "laya preset",
+    "block_from": 0.9,
+    "caught": 13,
+    "false_blocks": 0
+   },
+   {
+    "guard": "cascade",
+    "block_from": 0.5,
+    "caught": 14,
+    "false_blocks": 0
+   },
+   {
+    "guard": "cascade",
+    "block_from": 0.7,
+    "caught": 11,
+    "false_blocks": 0
+   },
+   {
+    "guard": "cascade",
+    "block_from": 0.9,
+    "caught": 11,
+    "false_blocks": 0
+   }
+  ],
+  "jev_input_tokens": 85460,
+  "jev_cost_usd": 0.0036
+ }
 }
