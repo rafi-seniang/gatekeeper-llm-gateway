@@ -1,0 +1,21 @@
+{
+ "injection": [
+  {
+   "guard": "protectai/deberta-v3-base-prompt-injection-v2",
+   "caught": "15 of 16",
+   "false_blocks": "7 of 30",
+   "precision": 0.682,
+   "recall": 0.938,
+   "median_ms": 40.3
+  },
+  {
+   "guard": "decision:Qwen/Qwen3.5-2B",
+   "caught": "7 of 16",
+   "false_blocks": "12 of 30",
+   "precision": 0.368,
+   "recall": 0.438,
+   "median_ms": 126.4
+  }
+ ],
+ "route_accuracy": 0.9
+}

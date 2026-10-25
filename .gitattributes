@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.{ps1,bat,cmd} text eol=crlf
+*.{png,jpg,jpeg,gif,ico,webp,pdf,zip,gz,woff,woff2,ttf} binary
+package-lock.json linguist-generated=true -diff
