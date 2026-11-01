@@ -1,18 +1,19 @@
-"""The gate: masking, cache, guards, routing, then the upstream. Every request is logged."""
+"""The gate: masking, cache, guards, routing, the upstream, then the tool-call check. Every request is logged."""
 
 import asyncio
 import time
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from app.engines.agent_guard import AgentGuard
 from app.engines.decisions import DecisionClient
 from app.engines.identifier_tagger import IdentifierFinder
 from app.engines.injection import InjectionGuard
 from app.engines.upstream import UpstreamClient
 from app.features.gate.cache import AnswerCache, cache_key
 from app.features.gate.events import EventLog
-from app.features.gate.identifiers import mask_conversation, restore_completion, with_tag_rule
-from app.features.gate.schemas import ChatMessage, ChatRequest, GateDecision, GateEvent, Route
+from app.features.gate.identifiers import mask_conversation, restore_completion, tool_calls_of, with_tag_rule
+from app.features.gate.schemas import BlockedBy, ChatMessage, ChatRequest, GateDecision, GateEvent, Route
 from app.platform.errors import AppError, RequestBlocked
 from config.logging import request_id
 from config.settings import Settings
@@ -20,6 +21,12 @@ from config.settings import Settings
 
 def last_user_text(messages: list[ChatMessage]) -> str:
     return next(message.content or "" for message in reversed(messages) if message.role == "user")
+
+
+def tool_results_after(messages: list[ChatMessage], role: str) -> list[str]:
+    """Tool results since the last message of `role`. An earlier turn already checked the ones before it."""
+    last = max((i for i, message in enumerate(messages) if message.role == role), default=-1)
+    return [message.content or "" for message in messages[last + 1 :] if message.role == "tool"]
 
 
 class Gate:
@@ -32,6 +39,7 @@ class Gate:
         upstream: UpstreamClient,
         cache: AnswerCache,
         events: EventLog,
+        agent_guard: AgentGuard | None = None,
     ) -> None:
         self._settings = settings
         self._finder = finder
@@ -39,20 +47,39 @@ class Gate:
         self._decisions = decisions
         self._upstream = upstream
         self._cache = cache
+        self._agent_guard = agent_guard
         self.events = events
 
     @property
     def guard_name(self) -> str:
         return self._guard.name
 
+    async def _tool_result_probability(self, masked_messages: list[ChatMessage]) -> float | None:
+        results = tool_results_after(masked_messages, "assistant")
+        if self._agent_guard is None or not results:
+            return None
+        user_task = last_user_text(masked_messages)
+        guard = self._agent_guard
+        return max(await asyncio.gather(*(guard.tool_result_probability(user_task, result) for result in results)))
+
     async def _decide(
         self, masked_messages: list[ChatMessage], masked_count: int, pinned_route: Route | None, started: float
     ) -> GateDecision:
         guarded_texts = [message.content or "" for message in masked_messages if message.role == "tool"]
         guarded_texts.append(last_user_text(masked_messages))
-        probabilities = await asyncio.gather(*(self._guard.probability(text) for text in guarded_texts))
+        probabilities, tool_result_probability = await asyncio.gather(
+            asyncio.gather(*(self._guard.probability(text) for text in guarded_texts)),
+            self._tool_result_probability(masked_messages),
+        )
         injection_probability = max(probabilities)
-        blocked = injection_probability >= self._settings.block_from_injection_probability
+        blocked_by: BlockedBy | None = None
+        if injection_probability >= self._settings.block_from_injection_probability:
+            blocked_by = "injection"
+        elif tool_result_probability is not None and (
+            tool_result_probability >= self._settings.block_from_tool_result_probability
+        ):
+            blocked_by = "tool_result"
+        blocked = blocked_by is not None
         # Only an allowed request needs a route, so a blocked one never waits on the decision endpoint
         difficulty = None
         if pinned_route is None and not blocked:
@@ -62,7 +89,9 @@ class Gate:
         route: Route | None = None if blocked else pinned_route or ("strong" if needs_strong_model else "small")
         return GateDecision(
             injection_probability=round(injection_probability, 4),
+            tool_result_probability=None if tool_result_probability is None else round(tool_result_probability, 4),
             blocked=blocked,
+            blocked_by=blocked_by,
             route=route,
             difficulty=None if difficulty is None else round(difficulty, 3),
             masked_identifiers=masked_count,
@@ -90,6 +119,7 @@ class Gate:
                 request_id=request_id.get(),
                 at=datetime.now(UTC).isoformat(timespec="seconds"),
                 outcome=outcome,
+                blocked_by=decision.blocked_by if decision else None,
                 route=decision.route if decision else None,
                 model=fields.get("model"),
                 injection_probability=decision.injection_probability if decision else None,
@@ -101,6 +131,37 @@ class Gate:
                 upstream_ms=fields.get("upstream_ms"),
                 preview=preview,  # always from the masked text: this log is served by /v1/gate/events
             )
+        )
+
+    async def _stop_unasked_tool_calls(
+        self,
+        completion: dict[str, Any],
+        masked_messages: list[ChatMessage],
+        decision: GateDecision,
+        preview: str,
+        **log_fields: Any,
+    ) -> None:
+        """Held before the application can run them. Jev reads the masked request and the call as the model wrote it."""
+        calls = [
+            call for choice in completion.get("choices", []) for call in tool_calls_of(choice.get("message") or {})
+        ]
+        if self._agent_guard is None or not calls:
+            return
+        scores = await self._agent_guard.tool_calls_scores(
+            last_user_text(masked_messages), tool_results_after(masked_messages, "user"), calls
+        )
+        stopped = [
+            {"tool": score.tool, "asked": score.asked, "scope": score.scope}
+            for score in scores
+            if score.asked < self._settings.tool_call_asked_below or score.scope >= self._settings.tool_call_scope_from
+        ]
+        if not stopped:
+            return
+        stopped_decision = decision.model_copy(update={"blocked": True, "blocked_by": "tool_call"})
+        self._log(preview, "blocked", stopped_decision, **log_fields)
+        raise RequestBlocked(
+            "The model proposed a tool call the user did not ask for, and it was not returned.",
+            {"gate": stopped_decision.model_dump(), "stopped_tool_calls": stopped},
         )
 
     async def complete(self, request: ChatRequest) -> dict[str, Any]:
@@ -141,6 +202,7 @@ class Gate:
             "output_tokens": usage.get("completion_tokens"),
             "upstream_ms": upstream_ms,
         }
+        await self._stop_unasked_tool_calls(completion, masked_messages, decision, preview, **log_fields)
         self._log(preview, "answered", decision, **log_fields)
         answer = {
             **completion,
