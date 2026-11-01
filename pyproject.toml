@@ -13,6 +13,10 @@ dependencies = [
     "torch>=2.4",
     "httpx>=0.27",
     "redis>=5.0",
+    "onnxruntime>=1.18",
+    "tokenizers>=0.19",
+    "huggingface-hub>=0.23",
+    "numpy>=1.24",
 ]
 
 [project.optional-dependencies]
@@ -61,5 +65,5 @@ strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["transformers.*"]
+module = ["transformers.*", "onnxruntime.*", "tokenizers.*"]
 ignore_missing_imports = true

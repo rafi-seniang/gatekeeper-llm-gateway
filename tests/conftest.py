@@ -5,6 +5,7 @@ import httpx
 import pytest
 
 from app.bootstrap import create_app
+from app.engines.identifier_tagger import IdentifierSpan
 from app.engines.upstream import UpstreamClient
 from app.features.gate.cache import InMemoryAnswerCache
 from app.features.gate.events import EventLog
@@ -13,6 +14,21 @@ from app.platform.dependencies import get_resources
 from app.platform.rate_limit import InMemoryRateLimiter
 from app.platform.resources import Resources
 from config.settings import Settings
+
+KNOWN_VALUES = {  # a stand-in for the tagger: it knows these values and nothing else
+    "Budi Santoso": "NAME",
+    "Siti Aminah": "NAME",
+    "budi@example.com": "EMAIL",
+    "3201234567890123": "NIK",
+    "5500 0000 0000 0004": "CARD_NUMBER",
+    "0812-3456-7890": "PHONE",
+}
+
+
+class FakeFinder:
+    async def find(self, text: str) -> list[IdentifierSpan]:
+        found = [(text.find(value), value, label) for value, label in KNOWN_VALUES.items() if value in text]
+        return [IdentifierSpan(label, start, start + len(value)) for start, value, label in sorted(found)]
 
 
 class FakeGuard:
@@ -47,6 +63,8 @@ class FakeUpstream:
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
         self.down = False
+        self.reply: str | None = "ok"
+        self.tool_calls: list[dict[str, Any]] = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         if self.down:
@@ -59,7 +77,17 @@ class FakeUpstream:
                 "id": "cmpl-1",
                 "object": "chat.completion",
                 "model": body["model"],
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": self.reply,
+                            **({"tool_calls": self.tool_calls} if self.tool_calls else {}),
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
                 "usage": {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
             },
         )
@@ -88,11 +116,15 @@ def decisions() -> FakeDecisions:
 
 @pytest.fixture
 async def client(
-    settings: Settings, upstream: FakeUpstream, guard: FakeGuard, decisions: FakeDecisions
+    settings: Settings,
+    upstream: FakeUpstream,
+    guard: FakeGuard,
+    decisions: FakeDecisions,
 ) -> AsyncIterator[httpx.AsyncClient]:
     upstream_http = httpx.AsyncClient(base_url="http://upstream/v1", transport=httpx.MockTransport(upstream.handler))
     gate = Gate(
         settings=settings,
+        finder=FakeFinder(),
         guard=guard,
         decisions=decisions,  # type: ignore[arg-type]
         upstream=UpstreamClient(upstream_http),
