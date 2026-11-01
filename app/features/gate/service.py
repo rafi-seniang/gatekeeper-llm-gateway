@@ -108,7 +108,7 @@ class Gate:
                 output_tokens=fields.get("output_tokens"),
                 decision_ms=decision.decision_ms if decision else None,
                 upstream_ms=fields.get("upstream_ms"),
-                preview=last_user_text(request.messages)[:120],
+                preview=mask_identifiers(last_user_text(request.messages))[0][:120],
             )
         )
 
