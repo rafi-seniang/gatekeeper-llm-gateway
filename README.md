@@ -1,19 +1,26 @@
 # Gatekeeper
 
 An OpenAI-compatible LLM gateway. An app points its OpenAI SDK at Gatekeeper instead of at a model, and every
-request passes four checks before a model sees it:
+request passes these checks:
 
-1. **Cache.** An exact repeat of an earlier request is answered from the cache (the request as sent, not
-   normalised). The cache is in Redis, so every worker shares it and it survives a restart.
-2. **Identifier masking.** Email addresses, phone numbers, 16-digit NIKs and card numbers in user and tool text are
-   replaced by `[EMAIL]`, `[PHONE]`, `[NIK]` and `[CARD]` first, so nothing after this step, hosted or not, sees them.
+1. **Personal data masking.** A local tagger (IndoPII Base, ONNX, on the CPU) replaces names, addresses, NIKs, phones and 17 other
+   kinds of personal data in user, tool and assistant text with tags such as `[NAME_1]`, so nothing after this step, hosted or not,
+   sees them. The answer gets the real values back.
+2. **Cache.** A repeat of an earlier masked request is answered from the cache, so requests that differ only in their values share one
+   stored answer, each getting its own values back. It is in Redis, every worker shares it, and it holds tags and no real value.
 3. **Injection guard.** The guard gives the probability that the latest user message, or any tool result in the
    conversation, is a prompt injection. At 0.98 or more (`BLOCK_FROM_INJECTION_PROBABILITY`) the request is refused
    with 403 and never sent. The threshold favours letting an attack through over blocking a real user (see
    `docs/experiments/injection-guard-thresholds.md`). The guard is a setting: a local DeBERTa classifier, TypeSafe's
    Jev, or a cascade of the two.
-4. **Routing.** A decision model scores how much reasoning the request needs (0 to 2). From 1.0 it goes to the
+4. **Tool-result guard** (`AGENT_GUARD_ENABLED`). Four Jev questions, in one request, read each new tool result against the user's task
+   and look for instructions hidden in it.
+5. **Routing.** A decision model scores how much reasoning the request needs (0 to 2). From 1.0 it goes to the
    strong model, below that to the small one. A caller can pin a route with `"model": "small"` or `"strong"`.
+6. **Tool-call check** (`AGENT_GUARD_ENABLED`). Before a reply's tool call reaches the application, Jev is asked whether the user asked for
+   it and whether it goes beyond the request. A stopped call is a 403 naming the tool.
+
+The results are in `docs/experiments/agent-guards.md` and the decision in `docs/adr/0004-model-masking-and-agent-guards.md`.
 
 Every answer carries a `gate` field with what was decided, and every request is logged for `/v1/gate/stats` and
 `/v1/gate/events`. Each API key gets `RATE_LIMIT_PER_MINUTE` requests a minute on `/v1`, counted in Redis, and the
@@ -28,7 +35,7 @@ screen in the lab frontend.
 | `INJECTION_GUARD` | What |
 |---|---|
 | `classifier` | `protectai/deberta-v3-base-prompt-injection-v2`, local, about 40 ms |
-| `jev` | TypeSafe's Jev (`jev-latest`, answered as `jev-1.14.0`), a hosted System One model asked one yes/no question with what counts as yes and no (`JEV_INJECTION_QUESTION` in `app/engines/injection.py`), about 240 ms |
+| `jev` | TypeSafe's Jev (pinned to `jev-1.14.0`), a hosted System One model asked one yes/no question with what counts as yes and no (`JEV_INJECTION_QUESTION` in `app/engines/injection.py`), about 240 ms |
 | `cascade` | the classifier, and Jev only for the requests the classifier would block; Jev must agree before a block |
 | `decision` | the yes/no question asked through the decision endpoint (`DECISION_*` settings) |
 
@@ -36,8 +43,8 @@ The evaluation also runs Convai Innovations' [Laya](https://huggingface.co/conva
 `pip install laya`), the open, local model that takes the same System One questions as Jev, twice: with the gate's
 question, and with its own `prompt_injection` question from `laya.guard_questions()`. It is not a gate setting.
 
-Two labelled sets, each request guarded the way the gate guards it (identifiers already masked), one request at a
-time:
+Two labelled sets, each request guarded the way the gate guards it (identifiers masked by the patterns the gate used then), one
+request at a time:
 
 - **ours**: `data/eval_requests.jsonl`, 46 requests written for this gate. 16 injections (direct, role-play, hidden
   in a pasted email, a review or a tool result, in English and Indonesian) and 30 benign requests, some built to look
@@ -186,12 +193,13 @@ app/
   bootstrap.py              the app factory: middleware, error handlers, /v1 behind the API key and the rate limit
   platform/                 resources (models, clients, Redis, built once), dependencies, errors, middleware,
                             security, rate_limit
-  engines/                  injection guards (DeBERTa, Jev, cascade), the decision client, the upstream client
+  engines/                  injection guards (DeBERTa, Jev, cascade), the agent guard, the identifier tagger, the decision client,
+                            the upstream client
   features/
-    gate/                   router, controller, service (the four checks), identifiers (masking), cache (Redis or
+    gate/                   router, controller, service (the checks), identifiers (masking and restoring), cache (Redis or
                             memory), events, schemas, dependencies
     health/                 /health and /meta
-scripts/                    eval_injection.py, eval_gate.py (run from the repository root with PYTHONPATH=.)
+scripts/                    eval_injection.py, eval_gate.py, eval_agent_guard.py (from the repository root with PYTHONPATH=.)
 tests/                      fakes for every model and client, no network
 docs/adr/  docs/experiments/
 ```
@@ -208,8 +216,8 @@ docs/adr/  docs/experiments/
 
 ## Checks
 
-`ruff check . && ruff format --check . && mypy && pytest -q` (22 tests, no network, fakes for the guards, the decision
-endpoint, Jev and the upstream). `PYTHONPATH=. python scripts/eval_injection.py [ours deepset qualifire]` needs `JEV_API_KEY` and
+`ruff check . && ruff format --check . && mypy && pytest -q` (47 tests, no network, fakes for the tagger, the guards, the decision
+endpoint, Jev and the upstream). `PYTHONPATH=. python scripts/eval_agent_guard.py` needs `JEV_API_KEY` and costs about $0.001. `PYTHONPATH=. python scripts/eval_injection.py [ours deepset qualifire]` needs `JEV_API_KEY` and
 the `laya` package, and downloads the deepset test split to `data/deepset_prompt_injections_test.jsonl` on its first
 run. The `qualifire` set (5,000 prompts from the gated, CC BY-NC
 [`rogue-security/prompt-injections-benchmark`](https://huggingface.co/datasets/rogue-security/prompt-injections-benchmark))
@@ -222,6 +230,11 @@ the decision endpoint.
 - Streaming is not proxied: `stream: true` is rejected with 422.
 - The event log lives in memory: `/v1/gate/stats` and `/v1/gate/events` describe one process and start again on a
   restart. The cache and the rate limit are in Redis.
-- Masking covers identifier formats only. Names and addresses are meaning, not format, and are not masked.
+- Masking misses some values: 4.1% on its benchmark, more on English IDs, and spelled-out numbers. Passwords are outside its labels.
+- A wrongly masked word reaches the model as a tag, and a tag the model invents stays in the reply as written.
+- A restored reply can carry real values anywhere the model writes a tag, including in a link. Replies are not read for that yet.
+- Tool-call and tool-result blocks rest on public benchmarks and small hand-written sets, not on real traffic. They reduce risk and do
+  not remove it.
+- Several questions on the input catch nearly twice as much, but not robustly enough to ship yet (`docs/experiments/agent-guards.md`).
 - No guard here catches every attack. The next step is a larger labelled set from real traffic, and either
   fine-tuning the classifier on its benign messages or running both guards and sending disagreements to review.
