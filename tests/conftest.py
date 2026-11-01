@@ -5,6 +5,7 @@ import httpx
 import pytest
 
 from app.bootstrap import create_app
+from app.engines.agent_guard import ToolCallScores
 from app.engines.identifier_tagger import IdentifierSpan
 from app.engines.upstream import UpstreamClient
 from app.features.gate.cache import InMemoryAnswerCache
@@ -29,6 +30,28 @@ class FakeFinder:
     async def find(self, text: str) -> list[IdentifierSpan]:
         found = [(text.find(value), value, label) for value, label in KNOWN_VALUES.items() if value in text]
         return [IdentifierSpan(label, start, start + len(value)) for start, value, label in sorted(found)]
+
+
+class FakeAgentGuard:
+    """Flags a tool result that speaks to the assistant, and any call to send_email the request does not mention."""
+
+    def __init__(self) -> None:
+        self.tool_results_seen: list[str] = []
+        self.requests_seen: list[str] = []
+        self.scores: ToolCallScores | None = None
+
+    async def tool_result_probability(self, user_task: str, tool_result: str) -> float:
+        self.tool_results_seen.append(tool_result)
+        return 0.99 if "Assistant," in tool_result else 0.05
+
+    async def tool_calls_scores(
+        self, user_request: str, tool_results: list[str], calls: list[dict[str, Any]]
+    ) -> list[ToolCallScores]:
+        self.requests_seen.append(user_request)
+        if self.scores is not None:
+            return [self.scores]
+        asked = "Email" in user_request
+        return [ToolCallScores(call["function"]["name"], 0.9 if asked else 0.02, 0.1) for call in calls]
 
 
 class FakeGuard:
@@ -115,11 +138,17 @@ def decisions() -> FakeDecisions:
 
 
 @pytest.fixture
+def agent_guard() -> FakeAgentGuard:
+    return FakeAgentGuard()
+
+
+@pytest.fixture
 async def client(
     settings: Settings,
     upstream: FakeUpstream,
     guard: FakeGuard,
     decisions: FakeDecisions,
+    agent_guard: FakeAgentGuard,
 ) -> AsyncIterator[httpx.AsyncClient]:
     upstream_http = httpx.AsyncClient(base_url="http://upstream/v1", transport=httpx.MockTransport(upstream.handler))
     gate = Gate(
@@ -130,6 +159,7 @@ async def client(
         upstream=UpstreamClient(upstream_http),
         cache=InMemoryAnswerCache(max_entries=10, ttl_seconds=60),
         events=EventLog(size=50),
+        agent_guard=agent_guard,  # type: ignore[arg-type]
     )
     app = create_app(settings)
     resources = Resources(gate=gate, rate_limiter=InMemoryRateLimiter(), clients=[upstream_http])

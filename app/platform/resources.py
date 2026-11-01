@@ -8,6 +8,7 @@ import httpx
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
+from app.engines.agent_guard import AgentGuard
 from app.engines.decisions import DecisionClient
 from app.engines.identifier_tagger import OnnxIdentifierTagger
 from app.engines.injection import CascadeGuard, ClassifierGuard, DecisionGuard, InjectionGuard, JevGuard
@@ -61,7 +62,7 @@ async def build_resources(settings: Settings) -> Resources:
     decisions = DecisionClient(decision_http, settings.decision_model, settings.decision_protocol)
     clients = [upstream_http, decision_http]
     jev_decisions: DecisionClient | None = None
-    if settings.injection_guard in ("jev", "cascade"):
+    if settings.agent_guard_enabled or settings.injection_guard in ("jev", "cascade"):
         jev_http = jev_client(settings)
         clients.append(jev_http)
         jev_decisions = DecisionClient(jev_http, settings.jev_model, "systemone")
@@ -95,6 +96,7 @@ async def build_resources(settings: Settings) -> Resources:
         upstream=UpstreamClient(upstream_http),
         cache=cache,
         events=EventLog(settings.event_log_size),
+        agent_guard=AgentGuard(jev_decisions) if settings.agent_guard_enabled and jev_decisions else None,
     )
     return Resources(gate=gate, rate_limiter=rate_limiter, clients=clients, redis=redis)
 
