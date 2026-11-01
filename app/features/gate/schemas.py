@@ -53,7 +53,13 @@ class ChatMessage(BaseModel):
     model_config = ConfigDict(extra="allow")  # name, tool_call_id and the like pass through untouched
 
     role: Literal["system", "user", "assistant", "tool", "developer"]
-    content: str = Field(max_length=32_000)
+    content: str | None = Field(default=None, max_length=32_000)
+
+    @model_validator(mode="after")
+    def only_an_assistant_may_have_no_text(self) -> "ChatMessage":
+        if self.content is None and self.role != "assistant":
+            raise ValueError("only an assistant message may leave content empty, when it holds tool calls")
+        return self
 
 
 class Conversation(BaseModel):

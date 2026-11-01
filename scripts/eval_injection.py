@@ -17,7 +17,7 @@ Guards:
 - laya preset: Laya with its own prompt_injection question from laya.guard_questions()
 - cascade: the classifier, and Jev only for the requests the classifier would block; Jev must agree to block.
   Worked out from the two guards' answers on each request, so it costs no extra calls.
-Every guard sees the text as the gate passes it on: identifiers masked first ([CARD], [PHONE], [EMAIL], [NIK]).
+Every guard sees the text as the gate passes it on: personal data masked first ([NAME_1], [PHONE_1] and so on).
 In the small sets each request is sent on its own, so every latency is a single request's. The large set runs at full
 speed (Laya in batches, 8 Jev requests in flight) and reports no latency. The question wording is the one fixed before
 the first run, and the threshold table shows what a stricter block threshold trades. Needs JEV_API_KEY.
@@ -37,8 +37,9 @@ import pandas as pd
 from dotenv import dotenv_values
 
 from app.engines.decisions import INJECTION_QUESTION, DecisionClient
+from app.engines.identifier_tagger import OnnxIdentifierTagger
 from app.engines.injection import JEV_INJECTION_QUESTION, ClassifierGuard, InjectionGuard, JevGuard
-from app.features.gate.identifiers import mask_identifiers
+from app.features.gate.identifiers import IdentifierVault, mask_text
 from app.platform.errors import UpstreamUnavailable
 from app.platform.resources import jev_client
 from config.settings import get_settings
@@ -227,6 +228,12 @@ async def main(set_names: list[str]) -> None:
     router.predict("warm-up", {"injection": JEV_INJECTION_QUESTION})
     results: dict[str, Any] = {}
     per_request = []
+    tagger = OnnxIdentifierTagger(
+        settings.identifier_model,
+        settings.identifier_model_revision,
+        settings.identifier_span_threshold,
+        settings.identifier_threads,
+    )
     tokens = TokenCount()
     async with jev_client(settings) as http:
         http.event_hooks["response"].append(tokens)
@@ -242,7 +249,7 @@ async def main(set_names: list[str]) -> None:
             requests = pd.read_json(path, lines=True)
             labels = requests["injection"].astype(bool)
             frame = pd.DataFrame({"set": set_name, "text": requests["text"].str.slice(0, 90), "injection": labels})
-            masked = [mask_identifiers(text)[0] for text in requests["text"]]
+            masked = [mask_text(text, tagger.find_now(text), IdentifierVault()) for text in requests["text"]]
             names = [name for name in guards if name not in SKIPPED_GUARDS.get(set_name, set())]
             tokens_before = tokens.input_tokens
             for guard_name in names:
