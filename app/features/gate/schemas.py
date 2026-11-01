@@ -5,13 +5,16 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Route = Literal["small", "strong"]
+BlockedBy = Literal["injection", "tool_result", "tool_call"]
 
 
 class GateDecision(BaseModel):
     """What the gate decided about one request, returned with every answer and logged."""
 
     injection_probability: float
+    tool_result_probability: float | None = None  # None when the agent guard did not run
     blocked: bool
+    blocked_by: BlockedBy | None = None
     route: Route | None  # None when blocked: a blocked request is never routed
     difficulty: float | None  # None when the caller pinned the route
     masked_identifiers: int
@@ -22,6 +25,7 @@ class GateEvent(BaseModel):
     request_id: str
     at: str
     outcome: Literal["answered", "cached", "blocked", "failed"]
+    blocked_by: BlockedBy | None = None
     route: Route | None
     model: str | None
     injection_probability: float | None
@@ -53,7 +57,13 @@ class ChatMessage(BaseModel):
     model_config = ConfigDict(extra="allow")  # name, tool_call_id and the like pass through untouched
 
     role: Literal["system", "user", "assistant", "tool", "developer"]
-    content: str = Field(max_length=32_000)
+    content: str | None = Field(default=None, max_length=32_000)
+
+    @model_validator(mode="after")
+    def only_an_assistant_may_have_no_text(self) -> "ChatMessage":
+        if self.content is None and self.role != "assistant":
+            raise ValueError("only an assistant message may leave content empty, when it holds tool calls")
+        return self
 
 
 class Conversation(BaseModel):

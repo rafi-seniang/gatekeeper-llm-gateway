@@ -12,8 +12,7 @@ class GateController:
         return await self._gate.complete(body)
 
     async def check(self, body: CheckRequest) -> GateDecision:
-        decision, _ = await self._gate.decide(body.messages, pinned_route=None)
-        return decision
+        return await self._gate.check(body.messages)
 
     def stats(self) -> GateStats:
         return self._gate.events.stats()

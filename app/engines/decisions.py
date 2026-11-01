@@ -59,7 +59,7 @@ class DecisionClient:
     def model(self) -> str:
         return self._model
 
-    async def ask(self, state: str, questions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    async def ask(self, state: str | dict[str, Any], questions: dict[str, dict[str, Any]]) -> dict[str, Any]:
         """All questions about one state in one Jev /v1/systemone request."""
         try:
             response = await self._http.post(

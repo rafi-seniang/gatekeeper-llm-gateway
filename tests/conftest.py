@@ -5,6 +5,8 @@ import httpx
 import pytest
 
 from app.bootstrap import create_app
+from app.engines.agent_guard import ToolCallScores
+from app.engines.identifier_tagger import IdentifierSpan
 from app.engines.upstream import UpstreamClient
 from app.features.gate.cache import InMemoryAnswerCache
 from app.features.gate.events import EventLog
@@ -13,6 +15,43 @@ from app.platform.dependencies import get_resources
 from app.platform.rate_limit import InMemoryRateLimiter
 from app.platform.resources import Resources
 from config.settings import Settings
+
+KNOWN_VALUES = {  # a stand-in for the tagger: it knows these values and nothing else
+    "Budi Santoso": "NAME",
+    "Siti Aminah": "NAME",
+    "budi@example.com": "EMAIL",
+    "3201234567890123": "NIK",
+    "5500 0000 0000 0004": "CARD_NUMBER",
+    "0812-3456-7890": "PHONE",
+}
+
+
+class FakeFinder:
+    async def find(self, text: str) -> list[IdentifierSpan]:
+        found = [(text.find(value), value, label) for value, label in KNOWN_VALUES.items() if value in text]
+        return [IdentifierSpan(label, start, start + len(value)) for start, value, label in sorted(found)]
+
+
+class FakeAgentGuard:
+    """Flags a tool result that speaks to the assistant, and any call to send_email the request does not mention."""
+
+    def __init__(self) -> None:
+        self.tool_results_seen: list[str] = []
+        self.requests_seen: list[str] = []
+        self.scores: ToolCallScores | None = None
+
+    async def tool_result_probability(self, user_task: str, tool_result: str) -> float:
+        self.tool_results_seen.append(tool_result)
+        return 0.99 if "Assistant," in tool_result else 0.05
+
+    async def tool_calls_scores(
+        self, user_request: str, tool_results: list[str], calls: list[dict[str, Any]]
+    ) -> list[ToolCallScores]:
+        self.requests_seen.append(user_request)
+        if self.scores is not None:
+            return [self.scores]
+        asked = "Email" in user_request
+        return [ToolCallScores(call["function"]["name"], 0.9 if asked else 0.02, 0.1) for call in calls]
 
 
 class FakeGuard:
@@ -47,6 +86,8 @@ class FakeUpstream:
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
         self.down = False
+        self.reply: str | None = "ok"
+        self.tool_calls: list[dict[str, Any]] = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         if self.down:
@@ -59,7 +100,17 @@ class FakeUpstream:
                 "id": "cmpl-1",
                 "object": "chat.completion",
                 "model": body["model"],
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": self.reply,
+                            **({"tool_calls": self.tool_calls} if self.tool_calls else {}),
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
                 "usage": {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
             },
         )
@@ -87,17 +138,28 @@ def decisions() -> FakeDecisions:
 
 
 @pytest.fixture
+def agent_guard() -> FakeAgentGuard:
+    return FakeAgentGuard()
+
+
+@pytest.fixture
 async def client(
-    settings: Settings, upstream: FakeUpstream, guard: FakeGuard, decisions: FakeDecisions
+    settings: Settings,
+    upstream: FakeUpstream,
+    guard: FakeGuard,
+    decisions: FakeDecisions,
+    agent_guard: FakeAgentGuard,
 ) -> AsyncIterator[httpx.AsyncClient]:
     upstream_http = httpx.AsyncClient(base_url="http://upstream/v1", transport=httpx.MockTransport(upstream.handler))
     gate = Gate(
         settings=settings,
+        finder=FakeFinder(),
         guard=guard,
         decisions=decisions,  # type: ignore[arg-type]
         upstream=UpstreamClient(upstream_http),
         cache=InMemoryAnswerCache(max_entries=10, ttl_seconds=60),
         events=EventLog(size=50),
+        agent_guard=agent_guard,  # type: ignore[arg-type]
     )
     app = create_app(settings)
     resources = Resources(gate=gate, rate_limiter=InMemoryRateLimiter(), clients=[upstream_http])

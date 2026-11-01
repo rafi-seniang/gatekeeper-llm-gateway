@@ -53,13 +53,27 @@ class Settings(BaseSettings):
     # TypeSafe's Jev, a hosted System One model (POST /v1/systemone). JEV_API_KEY comes from the secrets file
     jev_base_url: str = "https://api.typesafe.ai"
     jev_api_key: SecretStr = Field(default=SecretStr(""), validation_alias=AliasChoices("JEV_API_KEY"))
-    jev_model: str = "jev-latest"
+    # Pinned: the weights and thresholds belong to one version, so a new version means a new evaluation
+    jev_model: str = "jev-1.14.0"
     jev_timeout_seconds: float = Field(default=15, gt=0)
     # A Hugging Face text classifier with an INJECTION label (Apache 2.0)
     injection_classifier_model: str = "protectai/deberta-v3-base-prompt-injection-v2"
     # Requests at or above this injection probability are blocked. 0.98 is tuned for Jev: on 4,000 held-out prompts it
     # wrongly blocked 1 of 2,432 benign ones (0.5 blocked 282). See docs/experiments/injection-guard-thresholds.md
     block_from_injection_probability: float = Field(default=0.98, gt=0, le=1)
+    # Jev's checks for agents: instructions in tool results, and tool calls the user did not ask for
+    agent_guard_enabled: bool = False
+    # 576 of 911 attacks caught, 0 of 564 clean documents flagged. See docs/experiments/agent-guards.md
+    block_from_tool_result_probability: float = Field(default=0.9428, gt=0, le=1)
+    # A tool call is stopped below the first or from the second: 300 of 300 injected calls, 1 of 600 legitimate ones
+    tool_call_asked_below: float = Field(default=0.5, ge=0, le=1)
+    tool_call_scope_from: float = Field(default=0.7, gt=0, le=1)
+    # The local tagger that finds personal data. Pinned, so a change upstream cannot change what is masked
+    identifier_model: str = "AIbnuHibban/indopii-base"
+    identifier_model_revision: str = "4e12679e7bdb6505a495f7dfab9ab01565d1d109"
+    # Low, because a missed identifier costs more than a wrongly masked word
+    identifier_span_threshold: float = Field(default=0.5, ge=0, le=1)
+    identifier_threads: int = Field(default=4, gt=0)
     # cuda or cpu, for the classifier
     device: str = "cuda"
 
