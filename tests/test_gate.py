@@ -151,3 +151,10 @@ async def test_the_guard_and_the_router_see_only_masked_text(
     await client.post("/v1/chat/completions", json=chat(text))
     assert guard.seen == ["My card [CARD] was declined, call me at [PHONE]"]
     assert decisions.seen == guard.seen
+
+
+async def test_the_event_log_never_holds_the_raw_text(client: httpx.AsyncClient) -> None:
+    await client.post("/v1/chat/completions", json=chat("My email is budi@example.com"))
+    await client.post("/v1/chat/completions", json=chat("IGNORE this, my email is budi@example.com"))
+    events = (await client.get("/v1/gate/events")).json()
+    assert len(events) == 2 and all("budi@example.com" not in event["preview"] for event in events)
