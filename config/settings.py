@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     redis_timeout_seconds: float = Field(default=2, gt=0)
     # Requests per caller (API key, or client address without one) per minute on /v1
     rate_limit_per_minute: int = Field(default=120, gt=0)
+    # Daily request caps across gated endpoints (0 disables)
+    daily_requests_per_caller: int = Field(default=0, ge=0)
+    daily_requests_total: int = Field(default=0, ge=0)
+    forwarded_allow_ips: str = "127.0.0.1"
 
     @property
     def api_key_list(self) -> list[str]:

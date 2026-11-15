@@ -7,17 +7,18 @@ from fastapi import APIRouter, Depends, Query
 from app.features.gate.controller import GateController
 from app.features.gate.dependencies import get_gate_controller
 from app.features.gate.schemas import ChatCompletion, ChatRequest, CheckRequest, GateDecision, GateEvent, GateStats
+from app.platform.dependencies import enforce_daily_gate_limit
 
 router = APIRouter(tags=["gate"])
 Controller = Annotated[GateController, Depends(get_gate_controller)]
 
 
-@router.post("/chat/completions")
+@router.post("/chat/completions", dependencies=[Depends(enforce_daily_gate_limit)])
 async def chat_completions(body: ChatRequest, controller: Controller) -> ChatCompletion:
     return await controller.complete(body)
 
 
-@router.post("/gate/check")
+@router.post("/gate/check", dependencies=[Depends(enforce_daily_gate_limit)])
 async def check(body: CheckRequest, controller: Controller) -> GateDecision:
     return await controller.check(body)
 

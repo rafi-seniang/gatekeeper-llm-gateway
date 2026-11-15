@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from app.platform.errors import RateLimited
-from app.platform.rate_limit import RateLimiter, caller_of
+from app.platform.rate_limit import DAY_SECONDS, RateLimiter, caller_of
 from app.platform.resources import Resources
 from config.settings import Settings
 
@@ -33,3 +33,23 @@ async def enforce_rate_limit(
     retry_after = await rate_limiter.hit(caller_of(request), settings.rate_limit_per_minute)
     if retry_after is not None:
         raise RateLimited(f"Over {settings.rate_limit_per_minute} requests a minute.", retry_after)
+
+
+async def enforce_daily_gate_limit(
+    request: Request,
+    rate_limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    caller = caller_of(request)
+    if settings.daily_requests_per_caller > 0:
+        daily_retry = await rate_limiter.hit(
+            caller, settings.daily_requests_per_caller, window_seconds=DAY_SECONDS, prefix="daily"
+        )
+        if daily_retry is not None:
+            raise RateLimited(f"Over {settings.daily_requests_per_caller} requests today.", daily_retry)
+    if settings.daily_requests_total > 0:
+        total_retry = await rate_limiter.hit(
+            "all", settings.daily_requests_total, window_seconds=DAY_SECONDS, prefix="daily-total"
+        )
+        if total_retry is not None:
+            raise RateLimited("Service daily request limit reached.", total_retry)
