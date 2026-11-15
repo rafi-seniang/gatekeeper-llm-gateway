@@ -10,10 +10,15 @@ COPY config ./config
 RUN pip wheel --no-deps --wheel-dir /wheels .
 
 FROM python:3.12-slim AS runtime
+ARG INCLUDE_LOCAL_MODELS=false
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8020 DEVICE=cpu
-# The CPU build of PyTorch first, so pip does not pull the multi-GB CUDA wheel for the classifier
-RUN pip install --no-cache-dir torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu
+# Install the CPU build of PyTorch and transformers only when a local DeBERTa guard is baked in
+RUN if [ "$INCLUDE_LOCAL_MODELS" = "true" ]; then \
+      pip install --no-cache-dir torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu && \
+      pip install --no-cache-dir "transformers>=5.0"; \
+    fi
 RUN useradd --create-home --uid 10001 app
+RUN mkdir -p /home/app/.cache/huggingface && chown -R app:app /home/app/.cache
 COPY --from=build /wheels /wheels
 RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
 USER app
