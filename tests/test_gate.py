@@ -1,4 +1,5 @@
 import httpx
+import pytest
 
 from app.engines.decisions import DecisionClient
 from tests.conftest import FakeDecisions, FakeGuard, FakeUpstream
@@ -149,3 +150,35 @@ async def test_the_event_log_never_holds_the_raw_text(client: httpx.AsyncClient)
     await client.post("/v1/chat/completions", json=chat("IGNORE this, my email is budi@example.com"))
     events = (await client.get("/v1/gate/events")).json()
     assert len(events) == 2 and all("budi@example.com" not in event["preview"] for event in events)
+
+
+async def test_off_topic_prompt_is_blocked_with_off_topic_reason(
+    client: httpx.AsyncClient, guard: FakeGuard, upstream: FakeUpstream, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.engines.injection import PromptGuardScore
+
+    async def fake_score(text: str, scope: str = "") -> PromptGuardScore:
+        guard.seen.append(f"{text} [{scope}]")
+        if "nasi goreng" in text.lower():
+            return PromptGuardScore(injection_probability=0.01, off_topic_probability=0.96)
+        return PromptGuardScore(injection_probability=0.01, off_topic_probability=0.04)
+
+    monkeypatch.setattr(guard, "score_prompt", fake_score, raising=False)
+
+    blocked = await client.post(
+        "/v1/chat/completions",
+        json=chat("Buatkan resep nasi goreng spesial", scope="IT helpdesk"),
+    )
+    assert blocked.status_code == 403
+    assert blocked.json()["gate"]["blocked_by"] == "off_topic"
+    assert blocked.json()["gate"]["off_topic_probability"] == 0.96
+    assert upstream.requests == []
+
+    allowed = await client.post(
+        "/v1/chat/completions",
+        json=chat("Tolong reset password VPN saya", scope="IT helpdesk"),
+    )
+    assert allowed.status_code == 200
+    assert allowed.json()["gate"]["off_topic_probability"] == 0.04
+    stats = (await client.get("/v1/gate/stats")).json()
+    assert stats["off_topic_blocked"] == 1

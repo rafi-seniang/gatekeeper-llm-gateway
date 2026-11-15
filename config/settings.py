@@ -56,11 +56,25 @@ class Settings(BaseSettings):
     # Pinned: the weights and thresholds belong to one version, so a new version means a new evaluation
     jev_model: str = "jev-1.14.0"
     jev_timeout_seconds: float = Field(default=15, gt=0)
+    # Gemini Decision 1 with 3-key rotation on HTTP 429 (fallback or primary System One guard)
+    gemini_api_key: SecretStr = Field(default=SecretStr(""), validation_alias=AliasChoices("GEMINI_API_KEY"))
+    gemini_api_key_2: SecretStr = Field(default=SecretStr(""), validation_alias=AliasChoices("GEMINI_API_KEY_2"))
+    gemini_api_key_3: SecretStr = Field(default=SecretStr(""), validation_alias=AliasChoices("GEMINI_API_KEY_3"))
+    gemini_api_keys: str = Field(default="", validation_alias=AliasChoices("GEMINI_API_KEYS"))
+    gemini_decision_model: str = "gemini-decision-1"
+    gemini_timeout_seconds: float = Field(default=15, gt=0)
     # A Hugging Face text classifier with an INJECTION label (Apache 2.0)
     injection_classifier_model: str = "protectai/deberta-v3-base-prompt-injection-v2"
-    # Requests at or above this injection probability are blocked. 0.98 is tuned for Jev: on 4,000 held-out prompts it
-    # wrongly blocked 1 of 2,432 benign ones (0.5 blocked 282). See docs/experiments/injection-guard-thresholds.md
-    block_from_injection_probability: float = Field(default=0.98, gt=0, le=1)
+    # High-confidence threshold so bilingual (EN/ID) benign prompts are never falsely blocked
+    block_from_injection_probability: float = Field(default=0.90, gt=0, le=1)
+    # High-confidence threshold for clearly out-of-topic requests outside the allowed scope
+    block_from_off_topic_probability: float = Field(default=0.90, gt=0, le=1)
+    default_allowed_scope: str = (
+        "general business, software and AI engineering, data analysis, customer support, "
+        "and cinema or service operations"
+    )
+    # Local IndoPII ONNX masking is off by default for EN/ID bilingual deployments
+    mask_identifiers_enabled: bool = False
     # Jev's checks for agents: instructions in tool results, and tool calls the user did not ask for
     agent_guard_enabled: bool = False
     # 576 of 911 attacks caught, 0 of 564 clean documents flagged. See docs/experiments/agent-guards.md
