@@ -3,7 +3,6 @@
 import asyncio
 import json
 import math
-import os
 import string
 from typing import Any, Literal
 
@@ -52,30 +51,15 @@ def letter_probabilities(top_logprobs: list[dict[str, Any]], count: int) -> list
     return [weight / total for weight in weights]
 
 
-def load_gemini_api_keys(settings: Settings | None = None) -> list[str]:
-    """Read primary + backup Gemini keys from settings and env, deduplicated in order."""
-    raw: list[str] = []
-    if settings is not None:
-        raw.extend(
-            [
-                settings.gemini_api_key.get_secret_value(),
-                settings.gemini_api_key_2.get_secret_value(),
-                settings.gemini_api_key_3.get_secret_value(),
-                *settings.gemini_api_keys.split(","),
-            ]
-        )
-    for var in ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"):
-        raw.append(os.environ.get(var, ""))
-    raw.extend(os.environ.get("GEMINI_API_KEYS", "").split(","))
-
-    seen: set[str] = set()
-    keys: list[str] = []
-    for candidate in raw:
-        key = candidate.strip()
-        if key and key not in seen:
-            seen.add(key)
-            keys.append(key)
-    return keys
+def load_gemini_api_keys(settings: Settings) -> list[str]:
+    """The primary and backup Gemini keys, each once, in order."""
+    raw = [
+        settings.gemini_api_key.get_secret_value(),
+        settings.gemini_api_key_2.get_secret_value(),
+        settings.gemini_api_key_3.get_secret_value(),
+        *settings.gemini_api_keys.split(","),
+    ]
+    return list(dict.fromkeys(key.strip() for key in raw if key.strip()))
 
 
 def build_gemini_clients(keys: list[str], timeout_seconds: float) -> list[Any]:
