@@ -12,7 +12,7 @@ class GateController:
         return await self._gate.complete(body)
 
     async def check(self, body: CheckRequest) -> GateDecision:
-        return await self._gate.check(body.messages)
+        return await self._gate.check(body.messages, scope=body.scope)
 
     def stats(self) -> GateStats:
         return self._gate.events.stats()

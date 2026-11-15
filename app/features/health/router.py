@@ -23,8 +23,8 @@ async def meta(resources: Annotated[Resources, Depends(get_resources)]) -> Servi
         id="gatekeeper",
         name="Gatekeeper",
         summary=(
-            "An OpenAI-compatible gateway: blocks prompt injection, masks personal data, "
-            "routes to a small or a strong model."
+            "Bilingual (EN/ID) LLM security gateway: blocks prompt injection, out-of-topic requests, "
+            "and malicious tool results."
         ),
         version=VERSION,
         engine=resources.gate.guard_name,

@@ -4,16 +4,16 @@ The weights are IndoPII Base (Apache 2.0), an ONNX tagger for 21 kinds of person
 Python is not used: only the weights, the tokenizer and the label list are read, and spans are decoded here.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
-import numpy as np
-import onnxruntime
-from huggingface_hub import snapshot_download
-from tokenizers import Tokenizer
+if TYPE_CHECKING:
+    import numpy as np
 
 EDGE_CHARACTERS = " \t\r\n,.;:()[]{}\"'"
 
@@ -29,6 +29,13 @@ class IdentifierFinder(Protocol):
     async def find(self, text: str) -> list[IdentifierSpan]:
         """Spans left to right, none overlapping."""
         ...
+
+
+class NoopIdentifierTagger:
+    """Pass-through identifier finder used when local ONNX masking is disabled."""
+
+    async def find(self, text: str) -> list[IdentifierSpan]:
+        return []
 
 
 def decode_spans(
@@ -74,6 +81,12 @@ class OnnxIdentifierTagger:
     """Loaded once at startup. Long texts are read in overlapping windows, weighted towards each window's middle."""
 
     def __init__(self, repository: str, revision: str, threshold: float, threads: int) -> None:
+        import numpy as np
+        import onnxruntime
+        from huggingface_hub import snapshot_download
+        from tokenizers import Tokenizer
+
+        self._np: Any = np
         folder = Path(
             snapshot_download(
                 repository, revision=revision, allow_patterns=["model.onnx", "tokenizer.json", "indopii.json"]
@@ -95,22 +108,26 @@ class OnnxIdentifierTagger:
         self._tokenizer.no_truncation()
 
     def _token_probabilities(self, ids: list[int]) -> np.ndarray:
-        totals = np.zeros((len(ids), len(self._tags)), dtype=np.float32)
-        weights = np.zeros(len(ids), dtype=np.float32)
+        numpy = self._np
+        totals = numpy.zeros((len(ids), len(self._tags)), dtype=numpy.float32)
+        weights = numpy.zeros(len(ids), dtype=numpy.float32)
         start = 0
         while True:  # one pass per window, the last one ends at the text's end
             end = min(len(ids), start + self._window)
-            window = np.array([[self._cls_id, *ids[start:end], self._sep_id]], dtype=np.int64)
-            logits = self._session.run(None, {"input_ids": window, "attention_mask": np.ones_like(window)})[0][0][1:-1]
+            window = numpy.array([[self._cls_id, *ids[start:end], self._sep_id]], dtype=numpy.int64)
+            logits = self._session.run(None, {"input_ids": window, "attention_mask": numpy.ones_like(window)})[0][0][
+                1:-1
+            ]
             logits = logits - logits.max(-1, keepdims=True)
-            probabilities = np.exp(logits)
+            probabilities = numpy.exp(logits)
             probabilities /= probabilities.sum(-1, keepdims=True)
-            positions = np.arange(end - start, dtype=np.float32)
-            edge_weight = np.minimum(positions + 1, end - start - positions) + 1.0
+            positions = numpy.arange(end - start, dtype=numpy.float32)
+            edge_weight = numpy.minimum(positions + 1, end - start - positions) + 1.0
             totals[start:end] += probabilities * edge_weight[:, None]
             weights[start:end] += edge_weight
             if end == len(ids):
-                return totals / weights[:, None]
+                result: np.ndarray = totals / weights[:, None]
+                return result
             start = end - self._stride
 
     def find_now(self, text: str) -> list[IdentifierSpan]:

@@ -62,19 +62,34 @@ class Gate:
         guard = self._agent_guard
         return max(await asyncio.gather(*(guard.tool_result_probability(user_task, result) for result in results)))
 
+    async def _score_user_prompt(self, text: str, scope: str | None) -> tuple[float, float]:
+        score_fn = getattr(self._guard, "score_prompt", None)
+        if score_fn is not None:
+            effective_scope = scope.strip() if scope and scope.strip() else self._settings.default_allowed_scope
+            scored = await score_fn(text, effective_scope)
+            return float(scored.injection_probability), float(scored.off_topic_probability)
+        return float(await self._guard.probability(text)), 0.0
+
     async def _decide(
-        self, masked_messages: list[ChatMessage], masked_count: int, pinned_route: Route | None, started: float
+        self,
+        masked_messages: list[ChatMessage],
+        masked_count: int,
+        pinned_route: Route | None,
+        started: float,
+        scope: str | None = None,
     ) -> GateDecision:
-        guarded_texts = [message.content or "" for message in masked_messages if message.role == "tool"]
-        guarded_texts.append(last_user_text(masked_messages))
-        probabilities, tool_result_probability = await asyncio.gather(
-            asyncio.gather(*(self._guard.probability(text) for text in guarded_texts)),
+        tool_texts = [message.content or "" for message in masked_messages if message.role == "tool"]
+        tool_probs, (user_injection_prob, off_topic_prob), tool_result_probability = await asyncio.gather(
+            asyncio.gather(*(self._guard.probability(text) for text in tool_texts)),
+            self._score_user_prompt(last_user_text(masked_messages), scope),
             self._tool_result_probability(masked_messages),
         )
-        injection_probability = max(probabilities)
+        injection_probability = max([*tool_probs, user_injection_prob])
         blocked_by: BlockedBy | None = None
         if injection_probability >= self._settings.block_from_injection_probability:
             blocked_by = "injection"
+        elif off_topic_prob >= self._settings.block_from_off_topic_probability:
+            blocked_by = "off_topic"
         elif tool_result_probability is not None and (
             tool_result_probability >= self._settings.block_from_tool_result_probability
         ):
@@ -89,6 +104,7 @@ class Gate:
         route: Route | None = None if blocked else pinned_route or ("strong" if needs_strong_model else "small")
         return GateDecision(
             injection_probability=round(injection_probability, 4),
+            off_topic_probability=round(off_topic_prob, 4),
             tool_result_probability=None if tool_result_probability is None else round(tool_result_probability, 4),
             blocked=blocked,
             blocked_by=blocked_by,
@@ -98,11 +114,11 @@ class Gate:
             decision_ms=round((time.perf_counter() - started) * 1000, 1),
         )
 
-    async def check(self, messages: list[ChatMessage]) -> GateDecision:
+    async def check(self, messages: list[ChatMessage], scope: str | None = None) -> GateDecision:
         """The decision for a conversation, without sending it anywhere."""
         started = time.perf_counter()
         masked_messages, vault = await mask_conversation(messages, self._finder)
-        return await self._decide(masked_messages, vault.replaced, None, started)
+        return await self._decide(masked_messages, vault.replaced, None, started, scope=scope)
 
     def _model_for(self, route: Route) -> str:
         return self._settings.strong_model if route == "strong" else self._settings.small_model
@@ -123,6 +139,7 @@ class Gate:
                 route=decision.route if decision else None,
                 model=fields.get("model"),
                 injection_probability=decision.injection_probability if decision else None,
+                off_topic_probability=decision.off_topic_probability if decision else None,
                 difficulty=decision.difficulty if decision else None,
                 masked_identifiers=decision.masked_identifiers if decision else fields.get("masked_identifiers", 0),
                 input_tokens=fields.get("input_tokens"),
@@ -172,18 +189,26 @@ class Gate:
         sampling = request.model_extra or {}
         masked_dump = [message.model_dump() for message in masked_messages]
         # Everything after masking sees only tags, so requests that differ only in their values share one stored answer
-        key = cache_key({"model": request.model, "messages": masked_dump, **sampling})
+        cache_payload: dict[str, Any] = {"model": request.model, "messages": masked_dump, **sampling}
+        if request.scope:
+            cache_payload["scope"] = request.scope
+        key = cache_key(cache_payload)
         cached = await self._cache.get(key)
         if cached is not None:
             self._log(preview, "cached", None, model=cached.get("model"), masked_identifiers=vault.replaced)
             return restore_completion({**cached, "gate": {**cached["gate"], "cached": True}}, vault)
 
         pinned_route = None if request.model == "auto" else request.model
-        decision = await self._decide(masked_messages, vault.replaced, pinned_route, started)
+        decision = await self._decide(masked_messages, vault.replaced, pinned_route, started, scope=request.scope)
         if decision.blocked:
             self._log(preview, "blocked", decision)
+            reason = (
+                "Request blocked by Gatekeeper: out-of-topic request outside the assistant's allowed scope."
+                if decision.blocked_by == "off_topic"
+                else "The request reads as a prompt injection and was not sent to a model."
+            )
             raise RequestBlocked(
-                "The request reads as a prompt injection and was not sent to a model.",
+                reason,
                 {"gate": decision.model_dump(), "guard": self.guard_name},
             )
 

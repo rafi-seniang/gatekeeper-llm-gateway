@@ -9,8 +9,8 @@ from fastapi import FastAPI
 from redis.asyncio import Redis
 
 from app.engines.agent_guard import AgentGuard
-from app.engines.decisions import DecisionClient
-from app.engines.identifier_tagger import OnnxIdentifierTagger
+from app.engines.decisions import DecisionClient, build_gemini_clients, load_gemini_api_keys
+from app.engines.identifier_tagger import IdentifierFinder, NoopIdentifierTagger, OnnxIdentifierTagger
 from app.engines.injection import CascadeGuard, ClassifierGuard, DecisionGuard, InjectionGuard, JevGuard
 from app.engines.upstream import UpstreamClient
 from app.features.gate.cache import AnswerCache, InMemoryAnswerCache, RedisAnswerCache
@@ -61,18 +61,41 @@ async def build_resources(settings: Settings) -> Resources:
     )
     decisions = DecisionClient(decision_http, settings.decision_model, settings.decision_protocol)
     clients = [upstream_http, decision_http]
+    gemini_keys = load_gemini_api_keys(settings)
+    gemini_clients = build_gemini_clients(gemini_keys, settings.gemini_timeout_seconds) if gemini_keys else []
+
     jev_decisions: DecisionClient | None = None
     if settings.agent_guard_enabled or settings.injection_guard in ("jev", "cascade"):
-        jev_http = jev_client(settings)
-        clients.append(jev_http)
-        jev_decisions = DecisionClient(jev_http, settings.jev_model, "systemone")
+        has_jev = bool(settings.jev_api_key.get_secret_value().strip())
+        jev_http: httpx.AsyncClient | None = None
+        if has_jev:
+            jev_http = jev_client(settings)
+            clients.append(jev_http)
+        elif not gemini_clients:
+            # Refuses to start when neither JEV_API_KEY nor any GEMINI_API_KEY is configured
+            jev_client(settings)
+
+        if has_jev and gemini_clients:
+            model_label = f"{settings.jev_model} + {settings.gemini_decision_model}"
+        elif has_jev:
+            model_label = settings.jev_model
+        else:
+            model_label = settings.gemini_decision_model
+
+        jev_decisions = DecisionClient(
+            jev_http,
+            model_label,
+            "systemone",
+            gemini_clients=gemini_clients,
+            gemini_model=settings.gemini_decision_model,
+        )
     guard: InjectionGuard
     if settings.injection_guard == "decision":
         guard = DecisionGuard(decisions)
     elif settings.injection_guard == "classifier":
         guard = ClassifierGuard(settings.injection_classifier_model, settings.device)
-    elif jev_decisions is not None:  # always set for the two guards left
-        jev = JevGuard(jev_decisions)
+    elif jev_decisions is not None:  # always set when jev or cascade guard is configured
+        jev = JevGuard(jev_decisions, default_scope=settings.default_allowed_scope)
         guard = (
             jev
             if settings.injection_guard == "jev"
@@ -82,11 +105,15 @@ async def build_resources(settings: Settings) -> Resources:
                 settings.block_from_injection_probability,
             )
         )
-    finder = OnnxIdentifierTagger(
-        settings.identifier_model,
-        settings.identifier_model_revision,
-        settings.identifier_span_threshold,
-        settings.identifier_threads,
+    finder: IdentifierFinder = (
+        OnnxIdentifierTagger(
+            settings.identifier_model,
+            settings.identifier_model_revision,
+            settings.identifier_span_threshold,
+            settings.identifier_threads,
+        )
+        if settings.mask_identifiers_enabled
+        else NoopIdentifierTagger()
     )
     gate = Gate(
         settings=settings,

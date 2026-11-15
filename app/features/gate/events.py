@@ -32,6 +32,7 @@ class EventLog:
             answered=len(answered),
             cached=sum(event.outcome == "cached" for event in events),
             blocked=sum(event.outcome == "blocked" for event in events),
+            off_topic_blocked=sum(event.blocked_by == "off_topic" for event in events),
             failed=sum(event.outcome == "failed" for event in events),
             small_routed=sum(event.route == "small" for event in answered),
             strong_routed=sum(event.route == "strong" for event in answered),

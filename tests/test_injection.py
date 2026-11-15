@@ -65,3 +65,47 @@ def test_a_jev_guard_without_a_key_refuses_to_start() -> None:
     settings = Settings(_env_file=None, injection_guard="jev", jev_api_key="")  # type: ignore[call-arg]
     with pytest.raises(RuntimeError, match="JEV_API_KEY"):
         jev_client(settings)
+
+
+async def test_decision_client_rotates_gemini_keys_on_429_and_falls_back_from_jev() -> None:
+    from types import SimpleNamespace
+
+    from google.genai.errors import APIError
+
+    calls: list[str] = []
+
+    class FakeDecisionsAPI:
+        def __init__(self, name: str, fail_429: bool = False) -> None:
+            self.name = name
+            self.fail_429 = fail_429
+
+        def create(self, **kwargs: object) -> object:
+            calls.append(self.name)
+            if self.fail_429:
+                raise APIError(429, {"error": {"message": "RESOURCE_EXHAUSTED"}}, None)
+            return SimpleNamespace(
+                answers={
+                    "injection": SimpleNamespace(model_dump=lambda: {"type": "noul", "noul": 0.02}),
+                    "off_topic": SimpleNamespace(model_dump=lambda: {"type": "noul", "noul": 0.96}),
+                }
+            )
+
+    gemini_clients = [
+        SimpleNamespace(decisions=FakeDecisionsAPI("key1", fail_429=True)),
+        SimpleNamespace(decisions=FakeDecisionsAPI("key2")),
+        SimpleNamespace(decisions=FakeDecisionsAPI("key3")),
+    ]
+
+    def failing_jev(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503)
+
+    async with httpx.AsyncClient(
+        base_url="https://api.typesafe.ai", transport=httpx.MockTransport(failing_jev)
+    ) as http:
+        client = DecisionClient(http, "jev-1.14.0", "systemone", gemini_clients=gemini_clients)
+        guard = JevGuard(client, default_scope="business support and cinema booking")
+        score = await guard.score_prompt("Buatkan resep nasi goreng spesial")
+
+    assert calls == ["key1", "key2"]
+    assert score.injection_probability == 0.02
+    assert score.off_topic_probability == 0.96

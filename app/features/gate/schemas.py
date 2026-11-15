@@ -5,13 +5,14 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Route = Literal["small", "strong"]
-BlockedBy = Literal["injection", "tool_result", "tool_call"]
+BlockedBy = Literal["injection", "off_topic", "tool_result", "tool_call"]
 
 
 class GateDecision(BaseModel):
     """What the gate decided about one request, returned with every answer and logged."""
 
     injection_probability: float
+    off_topic_probability: float = 0.0
     tool_result_probability: float | None = None  # None when the agent guard did not run
     blocked: bool
     blocked_by: BlockedBy | None = None
@@ -29,6 +30,7 @@ class GateEvent(BaseModel):
     route: Route | None
     model: str | None
     injection_probability: float | None
+    off_topic_probability: float | None = None
     difficulty: float | None
     masked_identifiers: int
     input_tokens: int | None
@@ -43,6 +45,7 @@ class GateStats(BaseModel):
     answered: int
     cached: int
     blocked: int
+    off_topic_blocked: int = 0
     failed: int
     small_routed: int
     strong_routed: int
@@ -82,10 +85,13 @@ class ChatRequest(Conversation):
     # "auto" lets the gate choose; "small" or "strong" pins a route
     model: Literal["auto", "small", "strong"] = "auto"
     stream: Literal[False] = False  # streaming is not proxied yet: the gate answers once the upstream has
+    scope: str | None = Field(default=None, max_length=600)
 
 
 class CheckRequest(Conversation):
     """A request to judge without sending it anywhere."""
+
+    scope: str | None = Field(default=None, max_length=600)
 
 
 ChatCompletion = dict[str, Any]
