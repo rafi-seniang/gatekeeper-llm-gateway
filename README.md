@@ -3,16 +3,20 @@
 An OpenAI-compatible LLM gateway. An app points its OpenAI SDK at Gatekeeper instead of at a model, and every
 request passes these checks:
 
-1. **Personal data masking.** A local tagger (IndoPII Base, ONNX, on the CPU) replaces names, addresses, NIKs, phones and 17 other
-   kinds of personal data in user, tool and assistant text with tags such as `[NAME_1]`, so nothing after this step, hosted or not,
-   sees them. The answer gets the real values back.
+1. **Personal data masking** (`MASK_IDENTIFIERS_ENABLED`, off by default and on rafilab.com). A local tagger (IndoPII Base, ONNX,
+   on the CPU) replaces names, addresses, NIKs, phones and 17 other kinds of personal data in user, tool and assistant text with
+   tags such as `[NAME_1]`, so nothing after this step, hosted or not, sees them. The answer gets the real values back. It is off
+   because the tagger knows Indonesian only and the hosted demo takes English and Indonesian: with it off, personal data in a
+   request reaches Jev, Gemini and DeepSeek as written.
 2. **Cache.** A repeat of an earlier masked request is answered from the cache, so requests that differ only in their values share one
    stored answer, each getting its own values back. It is in Redis, every worker shares it, and it holds tags and no real value.
-3. **Injection guard.** The guard gives the probability that the latest user message, or any tool result in the
-   conversation, is a prompt injection. At 0.98 or more (`BLOCK_FROM_INJECTION_PROBABILITY`) the request is refused
-   with 403 and never sent. The threshold favours letting an attack through over blocking a real user (see
-   `docs/experiments/injection-guard-thresholds.md`). The guard is a setting: a local DeBERTa classifier, TypeSafe's
-   Jev, or a cascade of the two.
+3. **Injection and off-topic guard.** The guard gives the probability that the latest user message, or any tool result in
+   the conversation, is a prompt injection. At `BLOCK_FROM_INJECTION_PROBABILITY` or more the request is refused with 403
+   and never sent. The guard is a setting: a local DeBERTa classifier, TypeSafe's Jev, or a cascade of the two. With Jev,
+   the same request also asks whether the message is clearly outside an allowed scope (the request's `scope`, or
+   `DEFAULT_ALLOWED_SCOPE`), and blocks from `BLOCK_FROM_OFF_TOPIC_PROBABILITY`. Both questions say the text may be
+   English or Indonesian. When Jev fails, Gemini Decision 1 answers the same questions (up to three keys, the next on a
+   429). Measured below in "Bilingual guard".
 4. **Tool-result guard** (`AGENT_GUARD_ENABLED`). Four Jev questions, in one request, read each new tool result against the user's task
    and look for instructions hidden in it.
 5. **Routing.** A decision model scores how much reasoning the request needs (0 to 2). From 1.0 it goes to the
@@ -29,6 +33,25 @@ never a quiet fallback.
 
 Part of the AI Lab: it keeps the Lab contract (`/health`, `/meta`, OpenAPI, CORS for the lab frontend) and has a
 screen in the lab frontend.
+
+## Bilingual guard (`scripts/eval_bilingual_guard.py`, 15 Nov 2026)
+
+26 messages written for this check, half English and half Indonesian, scored on the production path (Jev
+`jev-1.14.0`, both questions in one request, the default scope, thresholds 0.90 and 0.90):
+
+| Kind | Count | Blocked | Scores |
+|---|---|---|---|
+| Ordinary requests | 8 | 0 | injection 0.01 to 0.02 |
+| Ordinary requests in an attack's words ("ignore my last message", "abaikan pesanan saya yang kemarin", "what is prompt injection") | 6 | 0 | injection 0.01 to 0.16 |
+| Direct injections | 5 | 5 | injection 0.97 to 0.99 |
+| Injection inside an email the user asks to translate | 1 | 0 | injection 0.48 |
+| Off-topic (recipes, poems, bedtime stories) | 6 | 6 | off-topic 0.99 |
+
+The gap between the highest ordinary score (0.16) and the lowest caught attack (0.97) is wide, so 0.90 blocks no
+ordinary message here. A set this small shows the threshold is sane, not a rate: the 25 Oct evaluation below is the
+larger one. The missed case is an instruction pasted inside data in the user's own message. The tool-result guard
+covers the same attack when it arrives through a tool. `GUARD_EVAL_ENGINE=gemini` runs Gemini Decision 1 alone:
+on 15 Nov it gave the same blocks on the first 20 messages (the missed email at 0.57).
 
 ## Injection guards compared (`scripts/eval_injection.py`, 25 Oct 2026)
 
