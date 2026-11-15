@@ -30,7 +30,7 @@ async def enforce_rate_limit(
     rate_limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> None:
-    retry_after = await rate_limiter.hit(caller_of(request), settings.rate_limit_per_minute)
+    retry_after = await rate_limiter.hit(caller_of(request, settings.api_key_list), settings.rate_limit_per_minute)
     if retry_after is not None:
         raise RateLimited(f"Over {settings.rate_limit_per_minute} requests a minute.", retry_after)
 
@@ -40,7 +40,7 @@ async def enforce_daily_gate_limit(
     rate_limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> None:
-    caller = caller_of(request)
+    caller = caller_of(request, settings.api_key_list)
     if settings.daily_requests_per_caller > 0:
         daily_retry = await rate_limiter.hit(
             caller, settings.daily_requests_per_caller, window_seconds=DAY_SECONDS, prefix="daily"
