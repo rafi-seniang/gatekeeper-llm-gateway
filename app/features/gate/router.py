@@ -6,7 +6,15 @@ from fastapi import APIRouter, Depends, Query
 
 from app.features.gate.controller import GateController
 from app.features.gate.dependencies import get_gate_controller
-from app.features.gate.schemas import ChatCompletion, ChatRequest, CheckRequest, GateDecision, GateEvent, GateStats
+from app.features.gate.schemas import (
+    ChatCompletion,
+    ChatRequest,
+    CheckRequest,
+    GateDecision,
+    GateEvent,
+    GateStats,
+    NamedScope,
+)
 from app.platform.dependencies import enforce_daily_gate_limit
 
 router = APIRouter(tags=["gate"])
@@ -29,5 +37,15 @@ async def stats(controller: Controller) -> GateStats:
 
 
 @router.get("/gate/events")
-async def events(controller: Controller, limit: Annotated[int, Query(ge=1, le=500)] = 50) -> list[GateEvent]:
-    return controller.recent_events(limit)
+async def events(
+    controller: Controller,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    scope_name: Annotated[str | None, Query(max_length=40, description="Only the checks of one named scope")] = None,
+) -> list[GateEvent]:
+    return controller.recent_events(limit, scope_name)
+
+
+@router.get("/gate/scopes")
+async def scopes(controller: Controller) -> list[NamedScope]:
+    """The scopes apps use by name, each with the exact questions the guard asks."""
+    return controller.named_scopes()

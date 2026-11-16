@@ -1,6 +1,14 @@
 """Turns the gate's HTTP requests into calls on the gate and shapes what goes back."""
 
-from app.features.gate.schemas import ChatCompletion, ChatRequest, CheckRequest, GateDecision, GateEvent, GateStats
+from app.features.gate.schemas import (
+    ChatCompletion,
+    ChatRequest,
+    CheckRequest,
+    GateDecision,
+    GateEvent,
+    GateStats,
+    NamedScope,
+)
 from app.features.gate.service import Gate
 
 
@@ -12,10 +20,13 @@ class GateController:
         return await self._gate.complete(body)
 
     async def check(self, body: CheckRequest) -> GateDecision:
-        return await self._gate.check(body.messages, scope=body.scope)
+        return await self._gate.check(body.messages, scope=body.scope, scope_name=body.scope_name)
 
     def stats(self) -> GateStats:
         return self._gate.events.stats()
 
-    def recent_events(self, limit: int) -> list[GateEvent]:
-        return self._gate.events.recent(limit)
+    def recent_events(self, limit: int, scope_name: str | None) -> list[GateEvent]:
+        return self._gate.events.recent(limit, scope_name)
+
+    def named_scopes(self) -> list[NamedScope]:
+        return self._gate.named_scopes()
