@@ -1,4 +1,4 @@
-"""The gate: masking, cache, guards, routing, the upstream, then the tool-call check. Every request is logged."""
+"""The gate: masking, cache, guard, the one upstream model, then the tool-call check. Every request is logged."""
 
 import asyncio
 import time
