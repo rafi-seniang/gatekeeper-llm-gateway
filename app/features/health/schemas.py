@@ -13,3 +13,6 @@ class ServiceMeta(BaseModel):
     engine: str
     own_ui_path: str
     docs_path: str
+    # A probability at or above these blocks the request, so a screen can say why 0.81 still passed
+    block_from_injection_probability: float
+    block_from_off_topic_probability: float
