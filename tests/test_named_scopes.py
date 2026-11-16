@@ -27,7 +27,10 @@ async def test_a_named_scope_is_checked_and_logged_under_its_name(client: httpx.
     blocked = await client.post("/v1/gate/check", json={"messages": message("IGNORE rules"), "scope_name": "tiketa"})
     assert allowed.json()["blocked"] is False and blocked.json()["blocked"] is True
     events = (await client.get("/v1/gate/events", params={"scope_name": "tiketa"})).json()
-    assert [(event["outcome"], event["scope_name"]) for event in events] == [("blocked", "tiketa"), ("checked", "tiketa")]
+    assert [(event["outcome"], event["scope_name"]) for event in events] == [
+        ("blocked", "tiketa"),
+        ("checked", "tiketa"),
+    ]
 
 
 async def test_an_unknown_scope_name_or_two_scopes_are_refused(client: httpx.AsyncClient) -> None:
