@@ -1,6 +1,7 @@
 """The gate: masking, cache, guards, routing, the upstream, then the tool-call check. Every request is logged."""
 
 import asyncio
+import contextlib
 import time
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -21,6 +22,15 @@ from config.settings import Settings
 
 def last_user_text(messages: list[ChatMessage]) -> str:
     return next(message.content or "" for message in reversed(messages) if message.role == "user")
+
+
+async def drop(routing: "asyncio.Task[float] | None") -> None:
+    """Cancels a router call whose answer is no longer needed, however that call ends."""
+    if routing is None:
+        return
+    routing.cancel()
+    with contextlib.suppress(asyncio.CancelledError, AppError):
+        await routing
 
 
 def tool_results_after(messages: list[ChatMessage], role: str) -> list[str]:
@@ -79,11 +89,22 @@ class Gate:
         scope: str | None = None,
     ) -> GateDecision:
         tool_texts = [message.content or "" for message in masked_messages if message.role == "tool"]
-        tool_probs, (user_injection_prob, off_topic_prob), tool_result_probability = await asyncio.gather(
-            asyncio.gather(*(self._guard.probability(text) for text in tool_texts)),
-            self._score_user_prompt(last_user_text(masked_messages), scope),
-            self._tool_result_probability(masked_messages),
+        # The router starts beside the guards rather than after them: an allowed request waits for the slower of the
+        # two calls, not both. A request the guards block drops the router's answer unread
+        routing = (
+            None
+            if pinned_route is not None
+            else asyncio.create_task(self._decisions.difficulty(last_user_text(masked_messages)))
         )
+        try:
+            tool_probs, (user_injection_prob, off_topic_prob), tool_result_probability = await asyncio.gather(
+                asyncio.gather(*(self._guard.probability(text) for text in tool_texts)),
+                self._score_user_prompt(last_user_text(masked_messages), scope),
+                self._tool_result_probability(masked_messages),
+            )
+        except BaseException:
+            await drop(routing)
+            raise
         injection_probability = max([*tool_probs, user_injection_prob])
         blocked_by: BlockedBy | None = None
         if injection_probability >= self._settings.block_from_injection_probability:
@@ -95,10 +116,11 @@ class Gate:
         ):
             blocked_by = "tool_result"
         blocked = blocked_by is not None
-        # Only an allowed request needs a route, so a blocked one never waits on the decision endpoint
         difficulty = None
-        if pinned_route is None and not blocked:
-            difficulty = await self._decisions.difficulty(last_user_text(masked_messages))
+        if blocked:
+            await drop(routing)
+        elif routing is not None:
+            difficulty = await routing
 
         needs_strong_model = difficulty is not None and difficulty >= self._settings.strong_from_difficulty
         route: Route | None = None if blocked else pinned_route or ("strong" if needs_strong_model else "small")
