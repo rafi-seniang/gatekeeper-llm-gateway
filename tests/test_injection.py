@@ -109,3 +109,20 @@ async def test_decision_client_rotates_gemini_keys_on_429_and_falls_back_from_je
     assert calls == ["key1", "key2"]
     assert score.injection_probability == 0.02
     assert score.off_topic_probability == 0.96
+
+
+async def test_jev_gets_its_model_name_and_the_label_is_only_shown() -> None:
+    sent: list[str] = []
+
+    def jev(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content)["model"])
+        answers = {"injection": {"type": "noul", "noul": 0.01}, "off_topic": {"type": "noul", "noul": 0.02}}
+        return httpx.Response(200, json={"model": "jev-1.14.0", "answers": answers})
+
+    async with httpx.AsyncClient(base_url="https://api.typesafe.ai", transport=httpx.MockTransport(jev)) as http:
+        client = DecisionClient(http, "jev-1.14.0", "systemone", label="jev-1.14.0 + gemini-decision-1")
+        guard = JevGuard(client, default_scope="cinema booking")
+        await guard.score_prompt("Jam berapa buka?")
+
+    assert sent == ["jev-1.14.0"]  # Jev answers 400 "Unknown model" to the label, and Gemini took every call
+    assert guard.name == "jev:jev-1.14.0 + gemini-decision-1"

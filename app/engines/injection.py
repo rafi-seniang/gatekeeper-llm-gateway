@@ -104,7 +104,7 @@ class DecisionGuard:
     """The same question asked of a decision model through the Jev wire format."""
 
     def __init__(self, decisions: DecisionClient) -> None:
-        self.name = f"decision:{decisions.model}"
+        self.name = f"decision:{decisions.label}"
         self._decisions = decisions
 
     async def probability(self, text: str) -> float:
@@ -120,7 +120,7 @@ class JevGuard:
         question: dict[str, Any] = JEV_INJECTION_QUESTION,
         default_scope: str = "",
     ) -> None:
-        self.name = f"jev:{jev.model}"
+        self.name = f"jev:{jev.label}"
         self._jev = jev
         self._question = question
         self._default_scope = default_scope

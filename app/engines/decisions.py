@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import math
 import string
 from typing import Any, Literal
@@ -14,6 +15,8 @@ from google.genai.errors import APIError
 
 from app.platform.errors import UpstreamUnavailable
 from config.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 LETTERS = string.ascii_uppercase
 
@@ -114,9 +117,11 @@ class DecisionClient:
         protocol: Literal["systemone", "openai_logprobs"] = "systemone",
         gemini_clients: list[Any] | None = None,
         gemini_model: str = "gemini-decision-1",
+        label: str | None = None,
     ) -> None:
         self._http = http
-        self._model = model
+        self._model = model  # sent to the endpoint, so it must be a model the endpoint knows
+        self._label = label or model  # shown in /meta and logs, such as "jev-1.14.0 + gemini-decision-1"
         self._protocol = protocol
         self._gemini_clients: list[Any] = list(gemini_clients or [])
         self._gemini_model = gemini_model
@@ -125,6 +130,10 @@ class DecisionClient:
     @property
     def model(self) -> str:
         return self._model
+
+    @property
+    def label(self) -> str:
+        return self._label
 
     def _ask_gemini_sync(self, state: str | dict[str, Any], questions: dict[str, dict[str, Any]]) -> dict[str, Any]:
         if not self._gemini_clients:
@@ -170,6 +179,9 @@ class DecisionClient:
             except httpx.HTTPError as exc:
                 if not self._gemini_clients:
                     raise UpstreamUnavailable(f"The decision endpoint did not answer: {type(exc).__name__}") from exc
+                # Said out loud: a fallback that stays silent once hid a Jev that refused every call
+                detail = exc.response.text[:200] if isinstance(exc, httpx.HTTPStatusError) else type(exc).__name__
+                logger.warning("Jev failed, Gemini Decision answers instead: %s", detail)
                 return await asyncio.to_thread(self._ask_gemini_sync, state, questions)
         if self._gemini_clients:
             return await asyncio.to_thread(self._ask_gemini_sync, state, questions)

@@ -84,10 +84,11 @@ async def build_resources(settings: Settings) -> Resources:
 
         jev_decisions = DecisionClient(
             jev_http,
-            model_label,
+            settings.jev_model,
             "systemone",
             gemini_clients=gemini_clients,
             gemini_model=settings.gemini_decision_model,
+            label=model_label,
         )
     guard: InjectionGuard
     if settings.injection_guard == "decision":
