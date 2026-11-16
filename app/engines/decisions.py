@@ -20,15 +20,6 @@ logger = logging.getLogger(__name__)
 
 LETTERS = string.ascii_uppercase
 
-DIFFICULTY_QUESTION = {
-    "type": "score",
-    "instructions": "How much reasoning does a good answer to this request need?",
-    "criteria": [
-        "a short fact, a greeting, a rewrite or a translation",
-        "some reasoning or a few steps",
-        "multi-step analysis, maths or code",
-    ],
-}
 INJECTION_QUESTION = {
     "type": "noul",
     "instructions": (
@@ -215,14 +206,6 @@ class DecisionClient:
         except (httpx.HTTPError, KeyError, IndexError, TypeError) as exc:
             raise UpstreamUnavailable(f"The decision endpoint did not answer: {type(exc).__name__}") from exc
         return letter_probabilities(top_logprobs, len(options))
-
-    async def difficulty(self, state: str) -> float:
-        if self._protocol == "openai_logprobs":
-            criteria = list(DIFFICULTY_QUESTION["criteria"])
-            probs = await self._letter_choice(state, str(DIFFICULTY_QUESTION["instructions"]), criteria)
-            return sum(level * probability for level, probability in enumerate(probs))
-        answers = await self.ask(state, {"difficulty": DIFFICULTY_QUESTION})
-        return float(answers["difficulty"]["score"])
 
     async def injection_probability(self, state: str) -> float:
         if self._protocol == "openai_logprobs":

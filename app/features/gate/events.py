@@ -22,11 +22,6 @@ class EventLog:
         decision_times = [event.decision_ms for event in events if event.decision_ms is not None]
         upstream_times = [event.upstream_ms for event in answered if event.upstream_ms is not None]
 
-        def tokens(route: str) -> int:
-            return sum(
-                (event.input_tokens or 0) + (event.output_tokens or 0) for event in answered if event.route == route
-            )
-
         return GateStats(
             requests=len(events),
             answered=len(answered),
@@ -34,11 +29,8 @@ class EventLog:
             blocked=sum(event.outcome == "blocked" for event in events),
             off_topic_blocked=sum(event.blocked_by == "off_topic" for event in events),
             failed=sum(event.outcome == "failed" for event in events),
-            small_routed=sum(event.route == "small" for event in answered),
-            strong_routed=sum(event.route == "strong" for event in answered),
             masked_identifiers=sum(event.masked_identifiers for event in events),
-            small_tokens=tokens("small"),
-            strong_tokens=tokens("strong"),
+            tokens=sum((event.input_tokens or 0) + (event.output_tokens or 0) for event in answered),
             median_decision_ms=statistics.median(decision_times) if decision_times else None,
             median_upstream_ms=statistics.median(upstream_times) if upstream_times else None,
         )

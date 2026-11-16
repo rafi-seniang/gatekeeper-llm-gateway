@@ -31,11 +31,11 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("UPSTREAM_API_KEY", "DEEPSEEK_API_KEY"),
     )
     upstream_timeout_seconds: float = Field(default=120, gt=0)
-    # The two models a request is routed between
-    small_model: str = "Qwen/Qwen3.5-0.8B"
-    strong_model: str = "Qwen/Qwen3.5-2B"
+    # The one model that answers every request the guards allow
+    upstream_model: str = "Qwen/Qwen3.5-0.8B"
 
-    # Decision endpoint: Jev /v1/systemone, or OpenAI /chat/completions with letter log-probabilities
+    # The injection guard's endpoint when INJECTION_GUARD=decision: Jev /v1/systemone, or OpenAI
+    # /chat/completions read through letter log-probabilities
     decision_protocol: Literal["systemone", "openai_logprobs"] = "systemone"
     decision_base_url: str = "http://localhost:8090"
     decision_api_key: SecretStr = Field(
@@ -44,8 +44,6 @@ class Settings(BaseSettings):
     )
     decision_model: str = "Qwen/Qwen3.5-2B"
     decision_timeout_seconds: float = Field(default=10, gt=0)
-    # Expected difficulty (0 to 2) from which a request goes to the strong model
-    strong_from_difficulty: float = Field(default=1.0, ge=0, le=2)
 
     # Which guard decides whether a request is a prompt injection. cascade: the classifier first, and only a
     # request it would block goes to Jev, which must agree before the request is blocked

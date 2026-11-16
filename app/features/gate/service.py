@@ -6,14 +6,13 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 from app.engines.agent_guard import AgentGuard
-from app.engines.decisions import DecisionClient
 from app.engines.identifier_tagger import IdentifierFinder
 from app.engines.injection import InjectionGuard
 from app.engines.upstream import UpstreamClient
 from app.features.gate.cache import AnswerCache, cache_key
 from app.features.gate.events import EventLog
 from app.features.gate.identifiers import mask_conversation, restore_completion, tool_calls_of, with_tag_rule
-from app.features.gate.schemas import BlockedBy, ChatMessage, ChatRequest, GateDecision, GateEvent, Route
+from app.features.gate.schemas import BlockedBy, ChatMessage, ChatRequest, GateDecision, GateEvent
 from app.platform.errors import AppError, RequestBlocked
 from config.logging import request_id
 from config.settings import Settings
@@ -35,7 +34,6 @@ class Gate:
         settings: Settings,
         finder: IdentifierFinder,
         guard: InjectionGuard,
-        decisions: DecisionClient,
         upstream: UpstreamClient,
         cache: AnswerCache,
         events: EventLog,
@@ -44,7 +42,6 @@ class Gate:
         self._settings = settings
         self._finder = finder
         self._guard = guard
-        self._decisions = decisions
         self._upstream = upstream
         self._cache = cache
         self._agent_guard = agent_guard
@@ -74,7 +71,6 @@ class Gate:
         self,
         masked_messages: list[ChatMessage],
         masked_count: int,
-        pinned_route: Route | None,
         started: float,
         scope: str | None = None,
     ) -> GateDecision:
@@ -95,21 +91,12 @@ class Gate:
         ):
             blocked_by = "tool_result"
         blocked = blocked_by is not None
-        # Only an allowed request needs a route, so a blocked one never waits on the decision endpoint
-        difficulty = None
-        if pinned_route is None and not blocked:
-            difficulty = await self._decisions.difficulty(last_user_text(masked_messages))
-
-        needs_strong_model = difficulty is not None and difficulty >= self._settings.strong_from_difficulty
-        route: Route | None = None if blocked else pinned_route or ("strong" if needs_strong_model else "small")
         return GateDecision(
             injection_probability=round(injection_probability, 4),
             off_topic_probability=round(off_topic_prob, 4),
             tool_result_probability=None if tool_result_probability is None else round(tool_result_probability, 4),
             blocked=blocked,
             blocked_by=blocked_by,
-            route=route,
-            difficulty=None if difficulty is None else round(difficulty, 3),
             masked_identifiers=masked_count,
             decision_ms=round((time.perf_counter() - started) * 1000, 1),
         )
@@ -118,10 +105,7 @@ class Gate:
         """The decision for a conversation, without sending it anywhere."""
         started = time.perf_counter()
         masked_messages, vault = await mask_conversation(messages, self._finder)
-        return await self._decide(masked_messages, vault.replaced, None, started, scope=scope)
-
-    def _model_for(self, route: Route) -> str:
-        return self._settings.strong_model if route == "strong" else self._settings.small_model
+        return await self._decide(masked_messages, vault.replaced, started, scope=scope)
 
     def _log(
         self,
@@ -136,11 +120,9 @@ class Gate:
                 at=datetime.now(UTC).isoformat(timespec="seconds"),
                 outcome=outcome,
                 blocked_by=decision.blocked_by if decision else None,
-                route=decision.route if decision else None,
                 model=fields.get("model"),
                 injection_probability=decision.injection_probability if decision else None,
                 off_topic_probability=decision.off_topic_probability if decision else None,
-                difficulty=decision.difficulty if decision else None,
                 masked_identifiers=decision.masked_identifiers if decision else fields.get("masked_identifiers", 0),
                 input_tokens=fields.get("input_tokens"),
                 output_tokens=fields.get("output_tokens"),
@@ -189,7 +171,7 @@ class Gate:
         sampling = request.model_extra or {}
         masked_dump = [message.model_dump() for message in masked_messages]
         # Everything after masking sees only tags, so requests that differ only in their values share one stored answer
-        cache_payload: dict[str, Any] = {"model": request.model, "messages": masked_dump, **sampling}
+        cache_payload: dict[str, Any] = {"messages": masked_dump, **sampling}
         if request.scope:
             cache_payload["scope"] = request.scope
         key = cache_key(cache_payload)
@@ -198,8 +180,7 @@ class Gate:
             self._log(preview, "cached", None, model=cached.get("model"), masked_identifiers=vault.replaced)
             return restore_completion({**cached, "gate": {**cached["gate"], "cached": True}}, vault)
 
-        pinned_route = None if request.model == "auto" else request.model
-        decision = await self._decide(masked_messages, vault.replaced, pinned_route, started, scope=request.scope)
+        decision = await self._decide(masked_messages, vault.replaced, started, scope=request.scope)
         if decision.blocked:
             self._log(preview, "blocked", decision)
             reason = (
@@ -212,8 +193,7 @@ class Gate:
                 {"gate": decision.model_dump(), "guard": self.guard_name},
             )
 
-        route: Route = decision.route or "small"  # set whenever the request was not blocked
-        model = self._model_for(route)
+        model = self._settings.upstream_model
         payload = {**sampling, "model": model, "messages": with_tag_rule(masked_dump, vault), "stream": False}
         try:
             completion, upstream_ms = await self._upstream.chat(payload)

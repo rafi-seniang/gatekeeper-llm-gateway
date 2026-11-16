@@ -19,8 +19,10 @@ request passes these checks:
    429). Measured below in "Bilingual guard".
 4. **Tool-result guard** (`AGENT_GUARD_ENABLED`). Four Jev questions, in one request, read each new tool result against the user's task
    and look for instructions hidden in it.
-5. **Routing.** A decision model scores how much reasoning the request needs (0 to 2). From 1.0 it goes to the
-   strong model, below that to the small one. A caller can pin a route with `"model": "small"` or `"strong"`.
+5. **One model.** Every allowed request goes to `UPSTREAM_MODEL` (`deepseek-flash` in production). A small or
+   strong router was removed on 16 Nov 2026: with one cheap model there is nothing to choose between, and the router
+   was itself a language model call. A Jev Score question could do that routing in the guard's own request if a
+   deployment ever needs two models.
 6. **Tool-call check** (`AGENT_GUARD_ENABLED`). Before a reply's tool call reaches the application, Jev is asked whether the user asked for
    it and whether it goes beyond the request. A stopped call is a 403 naming the tool.
 
@@ -169,11 +171,6 @@ What this shows:
 `results/eval_injection.json` holds the scores and `results/eval_injection_requests.csv` every request's probability
 under every guard.
 
-## Routing (`scripts/eval_gate.py`)
-
-90% of the 30 benign requests go to the model their label asks for, and 67% go to the small model. The difficulty
-score rises with the labelled level (means 0.72, 1.01 and 1.22). Measured with Qwen3.5-2B as the decision model.
-
 ## Run
 
 With `DEEPSEEK_API_KEY` set in `Lab/secrets/secrets.env` (no local LLM server needed), and `JEV_API_KEY` for the
@@ -199,9 +196,9 @@ client = OpenAI(base_url="http://localhost:8020/v1", api_key="local")
 answer = client.chat.completions.create(model="auto", messages=[{"role": "user", "content": "Hello"}])
 ```
 
-The upstream and the decision endpoint are settings: `DECISION_PROTOCOL=openai_logprobs` scores difficulty through
-OpenAI `top_logprobs` (used by `.env.example` with `deepseek-flash` and `deepseek-v4-pro` on `https://api.deepseek.com`),
-while `DECISION_PROTOCOL=systemone` speaks `POST /v1/systemone` (`transformers serve`, `laya-serve` or Jev). `.env.example`
+The upstream is a setting (`UPSTREAM_BASE_URL`, `UPSTREAM_MODEL`). The decision endpoint is used only by
+`INJECTION_GUARD=decision`: `DECISION_PROTOCOL=openai_logprobs` reads OpenAI `top_logprobs`, while
+`DECISION_PROTOCOL=systemone` speaks `POST /v1/systemone` (`transformers serve`, `laya-serve` or Jev). `.env.example`
 lists both setups. A guard that needs Jev refuses to start without `JEV_API_KEY`.
 
 ## Layout

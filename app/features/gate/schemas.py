@@ -4,7 +4,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-Route = Literal["small", "strong"]
 BlockedBy = Literal["injection", "off_topic", "tool_result", "tool_call"]
 
 
@@ -16,8 +15,6 @@ class GateDecision(BaseModel):
     tool_result_probability: float | None = None  # None when the agent guard did not run
     blocked: bool
     blocked_by: BlockedBy | None = None
-    route: Route | None  # None when blocked: a blocked request is never routed
-    difficulty: float | None  # None when the caller pinned the route
     masked_identifiers: int
     decision_ms: float
 
@@ -27,11 +24,9 @@ class GateEvent(BaseModel):
     at: str
     outcome: Literal["answered", "cached", "blocked", "failed"]
     blocked_by: BlockedBy | None = None
-    route: Route | None
     model: str | None
     injection_probability: float | None
     off_topic_probability: float | None = None
-    difficulty: float | None
     masked_identifiers: int
     input_tokens: int | None
     output_tokens: int | None
@@ -47,11 +42,8 @@ class GateStats(BaseModel):
     blocked: int
     off_topic_blocked: int = 0
     failed: int
-    small_routed: int
-    strong_routed: int
     masked_identifiers: int
-    small_tokens: int
-    strong_tokens: int
+    tokens: int  # input and output of the answered requests
     median_decision_ms: float | None
     median_upstream_ms: float | None
 
@@ -82,8 +74,8 @@ class Conversation(BaseModel):
 class ChatRequest(Conversation):
     model_config = ConfigDict(extra="allow")  # sampling options pass through to the upstream
 
-    # "auto" lets the gate choose; "small" or "strong" pins a route
-    model: Literal["auto", "small", "strong"] = "auto"
+    # Accepted so any OpenAI client works unchanged. The gate answers with its one configured model
+    model: str = Field(default="auto", max_length=200)
     stream: Literal[False] = False  # streaming is not proxied yet: the gate answers once the upstream has
     scope: str | None = Field(default=None, max_length=600)
 
