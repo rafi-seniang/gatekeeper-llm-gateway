@@ -138,7 +138,7 @@ def main() -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     counts = {category: sum(sample.category == category for sample in SAMPLES) for category in ("benign", "injection")}
     summary = {
-        "engine": client.model,
+        "engine": client.label,
         "thresholds": {
             "injection": settings.block_from_injection_probability,
             "off_topic": settings.block_from_off_topic_probability,
