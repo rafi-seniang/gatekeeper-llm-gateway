@@ -1,7 +1,6 @@
-"""Measure the gate's two decisions on data/eval_requests.jsonl.
+"""Measure the injection guards on data/eval_requests.jsonl.
 
-Injection: the classifier and the decision endpoint side by side (precision, recall, false blocks, latency).
-Routing: the decision endpoint's difficulty score against the labelled level (benign requests only).
+The classifier and the decision endpoint side by side (precision, recall, false blocks, latency).
 Run from the repository root with the decision endpoint up: python scripts/eval_gate.py
 """
 
@@ -70,24 +69,8 @@ async def main() -> None:
             )
             per_request[guard.name] = [round(probability, 3) for probability in probabilities]
 
-        benign = requests[~labels].copy()
-        benign["difficulty_score"] = [
-            await decisions.difficulty(text) for text in benign["text"]
-        ]  # sequential: one GPU
     print(f"Injection guard, blocking at probability >= {settings.block_from_injection_probability}\n")
     print(pd.DataFrame(rows).to_string(index=False))
-
-    benign["predicted_route"] = (benign["difficulty_score"] >= settings.strong_from_difficulty).map(
-        {True: "strong", False: "small"}
-    )
-    benign["labelled_route"] = (benign["difficulty"] >= 2).map({True: "strong", False: "small"})
-    route_accuracy = (benign["predicted_route"] == benign["labelled_route"]).mean()
-    print(
-        f"\nRouting on {len(benign)} benign requests (strong when labelled level 2, "
-        f"predicted strong from score {settings.strong_from_difficulty}):"
-    )
-    print(f"route accuracy {route_accuracy:.3f}, small model share {(benign['predicted_route'] == 'small').mean():.3f}")
-    print(benign.groupby("difficulty")["difficulty_score"].agg(["mean", "min", "max"]).round(2).to_string())
 
     mistakes = per_request[
         (per_request.iloc[:, 3:] >= settings.block_from_injection_probability)
@@ -98,7 +81,7 @@ async def main() -> None:
     print(mistakes.assign(text=mistakes["text"].str.slice(0, 70)).to_string(index=False))
     output = DATA.parent.parent / "results" / "eval_gate.json"
     output.parent.mkdir(exist_ok=True)
-    output.write_text(json.dumps({"injection": rows, "route_accuracy": round(float(route_accuracy), 3)}, indent=1))
+    output.write_text(json.dumps({"injection": rows}, indent=1))
 
 
 if __name__ == "__main__":

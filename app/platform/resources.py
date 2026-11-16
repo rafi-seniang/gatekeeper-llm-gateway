@@ -57,13 +57,7 @@ async def build_resources(settings: Settings) -> Resources:
         headers={"Authorization": f"Bearer {settings.upstream_api_key.get_secret_value()}"},
         timeout=settings.upstream_timeout_seconds,
     )
-    decision_http = httpx.AsyncClient(
-        base_url=settings.decision_base_url,
-        headers={"Authorization": f"Bearer {settings.decision_api_key.get_secret_value()}"},
-        timeout=settings.decision_timeout_seconds,
-    )
-    decisions = DecisionClient(decision_http, settings.decision_model, settings.decision_protocol)
-    clients = [upstream_http, decision_http]
+    clients = [upstream_http]
     gemini_keys = load_gemini_api_keys(settings)
     gemini_clients = build_gemini_clients(gemini_keys, settings.gemini_timeout_seconds) if gemini_keys else []
 
@@ -95,7 +89,13 @@ async def build_resources(settings: Settings) -> Resources:
         )
     guard: InjectionGuard
     if settings.injection_guard == "decision":
-        guard = DecisionGuard(decisions)
+        decision_http = httpx.AsyncClient(
+            base_url=settings.decision_base_url,
+            headers={"Authorization": f"Bearer {settings.decision_api_key.get_secret_value()}"},
+            timeout=settings.decision_timeout_seconds,
+        )
+        clients.append(decision_http)
+        guard = DecisionGuard(DecisionClient(decision_http, settings.decision_model, settings.decision_protocol))
     elif settings.injection_guard == "classifier":
         guard = ClassifierGuard(settings.injection_classifier_model, settings.device)
     elif jev_decisions is not None:  # always set when jev or cascade guard is configured
@@ -123,7 +123,6 @@ async def build_resources(settings: Settings) -> Resources:
         settings=settings,
         finder=finder,
         guard=guard,
-        decisions=decisions,
         upstream=UpstreamClient(upstream_http),
         cache=cache,
         events=EventLog(settings.event_log_size),

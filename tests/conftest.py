@@ -67,19 +67,6 @@ class FakeGuard:
         return 0.99 if "IGNORE" in text else 0.02
 
 
-class FakeDecisions:
-    """Rates a request hard when it mentions code."""
-
-    model = "fake-decisions"
-
-    def __init__(self) -> None:
-        self.seen: list[str] = []
-
-    async def difficulty(self, state: str) -> float:
-        self.seen.append(state)
-        return 1.8 if "code" in state else 0.2
-
-
 class FakeUpstream:
     """An OpenAI-compatible upstream that records what it was sent; `down` makes it refuse connections."""
 
@@ -133,11 +120,6 @@ def guard() -> FakeGuard:
 
 
 @pytest.fixture
-def decisions() -> FakeDecisions:
-    return FakeDecisions()
-
-
-@pytest.fixture
 def agent_guard() -> FakeAgentGuard:
     return FakeAgentGuard()
 
@@ -147,7 +129,6 @@ async def client(
     settings: Settings,
     upstream: FakeUpstream,
     guard: FakeGuard,
-    decisions: FakeDecisions,
     agent_guard: FakeAgentGuard,
 ) -> AsyncIterator[httpx.AsyncClient]:
     upstream_http = httpx.AsyncClient(base_url="http://upstream/v1", transport=httpx.MockTransport(upstream.handler))
@@ -155,7 +136,6 @@ async def client(
         settings=settings,
         finder=FakeFinder(),
         guard=guard,
-        decisions=decisions,  # type: ignore[arg-type]
         upstream=UpstreamClient(upstream_http),
         cache=InMemoryAnswerCache(max_entries=10, ttl_seconds=60),
         events=EventLog(size=50),

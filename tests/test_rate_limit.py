@@ -31,7 +31,6 @@ async def test_the_limit_counts_each_api_key_on_its_own() -> None:
 async def test_daily_gate_limit_caps_post_endpoints_without_limiting_stats(
     upstream: object,
     guard: object,
-    decisions: object,
     agent_guard: object,
 ) -> None:
     import httpx
@@ -58,7 +57,6 @@ async def test_daily_gate_limit_caps_post_endpoints_without_limiting_stats(
         settings=daily_settings,
         finder=FakeFinder(),
         guard=guard,  # type: ignore[arg-type]
-        decisions=decisions,  # type: ignore[arg-type]
         upstream=UpstreamClient(upstream_http),
         cache=InMemoryAnswerCache(max_entries=10, ttl_seconds=60),
         events=EventLog(size=50),
