@@ -38,6 +38,9 @@ def jev_client(settings: Settings) -> httpx.AsyncClient:
         base_url=settings.jev_base_url,
         headers={"Authorization": f"Bearer {api_key}"},
         timeout=settings.jev_timeout_seconds,
+        # Keep an idle connection for 2 minutes, not httpx's 5 seconds: a new TLS handshake to Jev costs about
+        # 250 ms (measured from the VPS on 16 Nov), more than Jev's own work on a request
+        limits=httpx.Limits(keepalive_expiry=120),
     )
 
 
