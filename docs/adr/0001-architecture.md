@@ -1,6 +1,6 @@
 # 1. A gate in front of the model, with a classifier for injection and a decision model for routing
 
-Date: 2026-10-25. Status: accepted.
+Date: 2026-10-25. Status: accepted. The routing part was replaced on 2026-11-16 by 0005 (one upstream model).
 
 ## Context
 
