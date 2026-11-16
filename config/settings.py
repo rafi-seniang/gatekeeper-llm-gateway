@@ -21,6 +21,8 @@ class Settings(BaseSettings):
 
     # Comma-separated keys accepted in the X-API-Key header. Empty disables auth (local only).
     api_keys: SecretStr = SecretStr("")
+    # Keys of the lab's own apps (Tiketa's agent). They skip the daily caps, which are meant for visitors
+    trusted_api_keys: SecretStr = SecretStr("")
     # Browser origins allowed to call the API (the lab frontend in development and preview)
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:4173"]
 
@@ -71,6 +73,9 @@ class Settings(BaseSettings):
         "general business, software and AI engineering, data analysis, customer support, "
         "and cinema or service operations"
     )
+    # Scopes kept here and named, so an app sends `scope_name` and the console shows what is really in use.
+    # JSON, such as {"tiketa": "booking cinema tickets at Tiketa ..."}
+    named_scopes: dict[str, str] = {}
     # Local IndoPII ONNX masking is off by default for EN/ID bilingual deployments
     mask_identifiers_enabled: bool = False
     # Jev's checks for agents: instructions in tool results, and tool calls the user did not ask for
@@ -108,6 +113,10 @@ class Settings(BaseSettings):
     @property
     def api_key_list(self) -> list[str]:
         return [key.strip() for key in self.api_keys.get_secret_value().split(",") if key.strip()]
+
+    @property
+    def trusted_api_key_list(self) -> list[str]:
+        return [key.strip() for key in self.trusted_api_keys.get_secret_value().split(",") if key.strip()]
 
 
 @lru_cache

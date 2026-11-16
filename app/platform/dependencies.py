@@ -40,6 +40,8 @@ async def enforce_daily_gate_limit(
     rate_limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> None:
+    if caller_of(request, settings.trusted_api_key_list).startswith("key:"):
+        return  # one of the lab's own apps: its own budget limits it, not the visitors' daily cap
     caller = caller_of(request, settings.api_key_list)
     if settings.daily_requests_per_caller > 0:
         daily_retry = await rate_limiter.hit(

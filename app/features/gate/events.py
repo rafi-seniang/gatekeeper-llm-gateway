@@ -13,8 +13,9 @@ class EventLog:
     def add(self, event: GateEvent) -> None:
         self._events.append(event)
 
-    def recent(self, limit: int) -> list[GateEvent]:
-        return list(self._events)[-limit:][::-1]  # newest first
+    def recent(self, limit: int, scope_name: str | None = None) -> list[GateEvent]:
+        events = [event for event in self._events if scope_name is None or event.scope_name == scope_name]
+        return events[-limit:][::-1]  # newest first
 
     def stats(self) -> GateStats:
         events = list(self._events)

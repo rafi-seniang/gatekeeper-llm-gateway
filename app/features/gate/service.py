@@ -3,17 +3,25 @@
 import asyncio
 import time
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any
 
 from app.engines.agent_guard import AgentGuard
 from app.engines.identifier_tagger import IdentifierFinder
-from app.engines.injection import InjectionGuard
+from app.engines.injection import BILINGUAL_INJECTION_QUESTION, InjectionGuard, off_topic_question
 from app.engines.upstream import UpstreamClient
 from app.features.gate.cache import AnswerCache, cache_key
 from app.features.gate.events import EventLog
 from app.features.gate.identifiers import mask_conversation, restore_completion, tool_calls_of, with_tag_rule
-from app.features.gate.schemas import BlockedBy, ChatMessage, ChatRequest, GateDecision, GateEvent
-from app.platform.errors import AppError, RequestBlocked
+from app.features.gate.schemas import (
+    BlockedBy,
+    ChatMessage,
+    ChatRequest,
+    GateDecision,
+    GateEvent,
+    NamedScope,
+    Outcome,
+)
+from app.platform.errors import AppError, RequestBlocked, UnknownScope
 from config.logging import request_id
 from config.settings import Settings
 
@@ -101,16 +109,40 @@ class Gate:
             decision_ms=round((time.perf_counter() - started) * 1000, 1),
         )
 
-    async def check(self, messages: list[ChatMessage], scope: str | None = None) -> GateDecision:
-        """The decision for a conversation, without sending it anywhere."""
+    async def check(
+        self, messages: list[ChatMessage], scope: str | None = None, scope_name: str | None = None
+    ) -> GateDecision:
+        """The decision for a conversation, without sending it anywhere. Logged, so an app's checks show up."""
+        if scope_name is not None:
+            scope = self._named_scope(scope_name)
         started = time.perf_counter()
         masked_messages, vault = await mask_conversation(messages, self._finder)
-        return await self._decide(masked_messages, vault.replaced, started, scope=scope)
+        decision = await self._decide(masked_messages, vault.replaced, started, scope=scope)
+        preview = last_user_text(masked_messages)[:120]
+        self._log(preview, "blocked" if decision.blocked else "checked", decision, scope_name=scope_name)
+        return decision
+
+    def _named_scope(self, name: str) -> str:
+        scope = self._settings.named_scopes.get(name)
+        if scope is None:
+            raise UnknownScope(f"No scope named {name!r}. Known: {', '.join(self._settings.named_scopes) or 'none'}")
+        return scope
+
+    def named_scopes(self) -> list[NamedScope]:
+        """Every named scope with the injection and off-topic questions Jev is asked with it."""
+        return [
+            NamedScope(
+                name=name,
+                scope=scope,
+                questions={"injection": BILINGUAL_INJECTION_QUESTION, "off_topic": off_topic_question(scope)},
+            )
+            for name, scope in self._settings.named_scopes.items()
+        ]
 
     def _log(
         self,
         preview: str,
-        outcome: Literal["answered", "cached", "blocked", "failed"],
+        outcome: Outcome,
         decision: GateDecision | None,
         **fields: Any,
     ) -> None:
@@ -119,6 +151,7 @@ class Gate:
                 request_id=request_id.get(),
                 at=datetime.now(UTC).isoformat(timespec="seconds"),
                 outcome=outcome,
+                scope_name=fields.get("scope_name"),
                 blocked_by=decision.blocked_by if decision else None,
                 model=fields.get("model"),
                 injection_probability=decision.injection_probability if decision else None,

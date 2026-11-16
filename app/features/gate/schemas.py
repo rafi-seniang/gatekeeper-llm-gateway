@@ -19,10 +19,14 @@ class GateDecision(BaseModel):
     decision_ms: float
 
 
+Outcome = Literal["answered", "cached", "blocked", "failed", "checked"]  # checked: judged allowed, not sent
+
+
 class GateEvent(BaseModel):
     request_id: str
     at: str
-    outcome: Literal["answered", "cached", "blocked", "failed"]
+    outcome: Outcome
+    scope_name: str | None = None
     blocked_by: BlockedBy | None = None
     model: str | None
     injection_probability: float | None
@@ -84,6 +88,21 @@ class CheckRequest(Conversation):
     """A request to judge without sending it anywhere."""
 
     scope: str | None = Field(default=None, max_length=600)
+    scope_name: str | None = Field(default=None, max_length=40, description="A scope kept in Gatekeeper, by name")
+
+    @model_validator(mode="after")
+    def one_scope_at_most(self) -> "CheckRequest":
+        if self.scope and self.scope_name:
+            raise ValueError("send scope or scope_name, not both")
+        return self
+
+
+class NamedScope(BaseModel):
+    """A scope an app uses by name, and the exact questions the guard asks with it."""
+
+    name: str
+    scope: str
+    questions: dict[str, Any]
 
 
 ChatCompletion = dict[str, Any]

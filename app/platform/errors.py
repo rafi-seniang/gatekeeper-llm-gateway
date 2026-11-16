@@ -30,6 +30,10 @@ class UpstreamUnavailable(AppError):
     status, title = 503, "Upstream unavailable"
 
 
+class UnknownScope(AppError):
+    status, title = 422, "Unknown scope"
+
+
 class RequestBlocked(AppError):
     """The guard judged the request a prompt injection."""
 

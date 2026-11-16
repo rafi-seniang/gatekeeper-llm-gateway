@@ -14,7 +14,7 @@ request passes these checks:
    the conversation, is a prompt injection. At `BLOCK_FROM_INJECTION_PROBABILITY` or more the request is refused with 403
    and never sent. The guard is a setting: a local DeBERTa classifier, TypeSafe's Jev, or a cascade of the two. With Jev,
    the same request also asks whether the message is clearly outside an allowed scope (the request's `scope`, or
-   `DEFAULT_ALLOWED_SCOPE`), and blocks from `BLOCK_FROM_OFF_TOPIC_PROBABILITY`. Both questions say the text may be
+   `DEFAULT_ALLOWED_SCOPE`, or a scope kept here under a name in `NAMED_SCOPES` that an app sends as `scope_name`), and blocks from `BLOCK_FROM_OFF_TOPIC_PROBABILITY`. `GET /v1/gate/scopes` shows each named scope with the exact questions Jev is asked, and every `/v1/gate/check` is logged with its scope name. Tiketa's chat agent checks each visitor message this way, with a `TRUSTED_API_KEYS` key that skips the visitors' daily caps. Both questions say the text may be
    English or Indonesian. When Jev fails, Gemini Decision 1 answers the same questions (up to three keys, the next on a
    429). Measured below in "Bilingual guard".
 4. **Tool-result guard** (`AGENT_GUARD_ENABLED`). Four Jev questions, in one request, read each new tool result against the user's task
